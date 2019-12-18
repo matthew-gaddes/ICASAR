@@ -10,28 +10,12 @@ An example of the ICASAR software with synthetic data
 #%% Imports
 
 import numpy as np
-import matplotlib.pyplot as plt
-
+import matplotlib.pyplot as plt 
 import pickle                                    # used for opening synthetic data
 
-from ICASAR_functions import *
+from ICASAR_functions import ICASAR
+from auxiliary_functions import col_to_ma, maps_tcs_rescale                 # 
 
-def col_to_ma(col, pixel_mask):
-    """ A function to take a column vector and a 2d pixel mask and reshape the column into a masked array.  
-    Useful when converting between vectors used by BSS methods results that are to be plotted
-    Inputs:
-        col | rank 1 array | 
-        pixel_mask | array mask (rank 2)
-    Outputs:
-        source | rank 2 masked array | colun as a masked 2d array
-    """
-    import numpy.ma as ma 
-    import numpy as np
-    
-    source = ma.array(np.zeros(pixel_mask.shape), mask = pixel_mask )
-    source.unshare_mask()
-    source[~source.mask] = col.ravel()   
-    return source
 
 #%% Things to set
 
@@ -63,12 +47,23 @@ for i in range(3):
     axes[1,i].plot(range(A_dc.shape[0]), A_dc[:,i])
     axes[1,i].axhline(0)
 fig1.suptitle('Synthetic sources and time courses')
+fig1.canvas.set_window_title("Synthetic sources and time courses")
 
 
 fig2, axes = plt.subplots(2,5)                                    # plot the synthetic interferograms
 for i, ax in enumerate(np.ravel(axes[:])):
     ax.imshow(col_to_ma(phUnw[i,:], pixel_mask))
 fig2.suptitle('Mixtures (intererograms)')
+fig2.canvas.set_window_title("Mixtures (intererograms)")
+
+fig3, axes = plt.subplots(1,3, figsize = (11,4))
+axes[0].imshow(X_dc, aspect = 500)
+axes[0].set_title('Data matix')
+axes[1].imshow(pixel_mask)
+axes[1].set_title('Mask')
+axes[2].imshow(col_to_ma(X_dc[0,:], pixel_mask))
+axes[2].set_title('Interferogram 1')
+fig3.canvas.set_window_title("Interferograms as row vectors and a mask")
 
 #%% do ICA with ICSAR function
  
@@ -77,32 +72,7 @@ S_best,  time_courses, x_train_residual_ts, Iq, n_clusters, S_all_info  = ICASAR
       
 
     
-#%% Figure from the manual
-
-fig1, axes = plt.subplots(1,3, figsize = (11,4))
-axes[0].imshow(X_dc, aspect = 500)
-axes[0].set_title('Data matix')
-axes[1].imshow(pixel_mask)
-axes[1].set_title('Mask')
-axes[2].imshow(col_to_ma(X_dc[0,:], pixel_mask))
-axes[2].set_title('Interferogram 1')
-fig1.savefig('manual/figure_1.png', bbox_inches='tight')
-
-
-#%%
 
 
 
-fig1, axes = plt.subplots(2,3)                                  # plot he synthetic sources
-for i in range(3):
-    axes[0,i].imshow(col_to_ma(S_synth[i,:], pixel_mask))
-    axes[1,i].plot(range(A_dc.shape[0]), A_dc[:,i])
-    axes[1,i].axhline(0)
-fig1.suptitle('Synthetic sources and time courses')
-
-
-fig2, axes = plt.subplots(2,5)                                    # plot the synthetic interferograms
-for i, ax in enumerate(np.ravel(axes[:])):
-    ax.imshow(col_to_ma(X_dc[i,:], pixel_mask))
-fig2.suptitle('Mixtures (intererograms)')
 
