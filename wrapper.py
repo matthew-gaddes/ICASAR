@@ -20,7 +20,7 @@ from auxiliary_functions import col_to_ma, maps_tcs_rescale                 #
 #%% Things to set
 
 n_comp = 5
-bootstrapping_param = (200, 0)
+bootstrapping_param = (200, 0)                 # (number of runs with bootstrapping, number of runs without bootstrapping)
 hdbscan_param = (35, 10)                        # (min_cluster_size, min_samples)
 tsne_param = (30, 12)                       # (perplexity, early_exaggeration)
 ica_param = (1e-2, 150)                     # (tolerance, max iterations)

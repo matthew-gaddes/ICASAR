@@ -139,13 +139,15 @@ def ICASAR(phUnw, bootstrapping_param, mask, n_comp, figures = True, scatter_zoo
 
     # Clustering with all the recovered sources   
     print('Starting to cluster the sources using HDBSCAN....', end = "")  
-    clusterer_precom = hdbscan.HDBSCAN(metric = 'precomputed', min_cluster_size = min_cluster_size, min_samples = min_samples, cluster_selection_method = 'leaf')
-    labels_hdbscan = clusterer_precom.fit_predict(D)                      # n_samples x n_features
-    Iq = cluster_quality_index(labels_hdbscan, S)                                             # with the chosen number of sources, calculate the cluster quality index
-    clusters_by_max_Iq = np.argsort(Iq)[::-1] + (-1)                                                                  # default for argsort is min first so reverse to max first as these are the best.   -1 as 
-    if np.min(labels_hdbscan) == (-1):
-        Iq_no_noise = np.delete(Iq, 0)
-        clusters_by_max_Iq_no_noise = np.argsort(Iq_no_noise)[::-1]                                                                   # default for argsort is min first so reverse to max first as these are the best
+    clusterer_precom = hdbscan.HDBSCAN(metric = 'precomputed', min_cluster_size = min_cluster_size, 
+                                       min_samples = min_samples, cluster_selection_method = 'leaf')
+    labels_hdbscan = clusterer_precom.fit_predict(D)                                                                  # D is n_samples x n_samples, then returns a rank 1 which is the cluster number (ie label) for each source
+    Iq = cluster_quality_index(labels_hdbscan, S)                                                                     # calculate the cluster quality index, using S (n_samples x n_samples), and the label for each one
+                                                                                                                      # note that Iq is ordered by cluster, so the first value is the cluster quality index for 1st cluster (which is usually labelled -1 and the noise points)
+    if np.min(labels_hdbscan) == (-1):                                                                                # if HDBSCAN has identified noise
+        Iq = Iq[1:]                                                                                                   # delete the first entry, as this is the Iq of the noise (which isn't a cluster)
+    clusters_by_max_Iq_no_noise = np.argsort(Iq)[::-1]                                                       # clusters by best Iqfirst
+    Iq_sorted = np.sort(Iq)[::-1]                                                                                     # cluster quality index, with firs value for first centrotype (ie first row of S_best)
     print('Done!')
     
     
@@ -156,7 +158,7 @@ def ICASAR(phUnw, bootstrapping_param, mask, n_comp, figures = True, scatter_zoo
     print('Done!' )
     
     if figures:
-        _ = plot_cluster_results(labels = labels_hdbscan, interactive = True, images_r3 = S_hist_r3, order = clusters_by_max_Iq_no_noise, Iq = Iq_no_noise, 
+        _ = plot_cluster_results(labels = labels_hdbscan, interactive = True, images_r3 = S_hist_r3, order = clusters_by_max_Iq_no_noise, Iq = Iq, 
                                xy2 = xy_tsne, hull = False, set_zoom = scatter_zoom)
         f4 = plt.subplots(); clusterer_precom.condensed_tree_.plot(select_clusters = True)
     
@@ -172,13 +174,12 @@ def ICASAR(phUnw, bootstrapping_param, mask, n_comp, figures = True, scatter_zoo
     print('Calculating the centrotypes and associated time courses...', end = '')
     S_best_args = np.zeros((n_clusters, 1)).astype(int)       
     for i, clust_number in enumerate(clusters_by_max_Iq_no_noise):                              # loop through each cluster in order of how good they are
-        source_index = np.ravel(np.argwhere(labels_hdbscan == clust_number))                     # get the indexes of sources in this cluster
-        S_this_cluster = np.copy(S[source_index, :][:, source_index])                          # similarities for just this cluster
-        in_cluster_arg = np.argmax(np.sum(S_this_cluster, axis = 1))                           # the sum of a column of S_this... is the similarity between 1 source and all the others.  Look for the column that's the maximum
-        S_best_args[i,0] = source_index[in_cluster_arg]                                        # conver the number in the cluster to the number overall (ie 2nd in cluster is actually 120th source)     
-    S_best = np.copy(S_hist_r2[np.ravel(S_best_args),:])                                       # these are the centrotype sources
-    Iq_sorted = np.sort(Iq)[::-1]                                                                 # cluster quality index, with firs value for first centrotype (ie first row of S_best)
-    del source_index, S_this_cluster, in_cluster_arg, S_best_args                              # tidy up    
+        source_index = np.ravel(np.argwhere(labels_hdbscan == clust_number))                    # get the indexes of sources in this cluster
+        S_this_cluster = np.copy(S[source_index, :][:, source_index])                           # similarities for just this cluster
+        in_cluster_arg = np.argmax(np.sum(S_this_cluster, axis = 1))                            # the sum of a column of S_this... is the similarity between 1 source and all the others.  Look for the column that's the maximum
+        S_best_args[i,0] = source_index[in_cluster_arg]                                         # conver the number in the cluster to the number overall (ie 2nd in cluster is actually 120th source)     
+    S_best = np.copy(S_hist_r2[np.ravel(S_best_args),:])                                        # these are the centrotype sources
+    del source_index, S_this_cluster, in_cluster_arg, S_best_args                               # tidy up    
     
     # Time courses using centrotypes
     tcs = np.zeros((n_ifgs, n_clusters))                                                    # store time courses as columns    
