@@ -24,7 +24,8 @@ bootstrapping_param = (200, 0)                 # (number of runs with bootstrapp
 hdbscan_param = (35, 10)                        # (min_cluster_size, min_samples)
 tsne_param = (30, 12)                       # (perplexity, early_exaggeration)
 ica_param = (1e-2, 150)                     # (tolerance, max iterations)
-
+figures = "png"                             # if png, saved in a folder as .png.  If window, open as interactive matplotlib figures
+                                            # default is "window" as 03_clustering_and_manifold is interactive.  
 
 #%% Import the data 
 
@@ -68,7 +69,8 @@ fig3.canvas.set_window_title("Interferograms as row vectors and a mask")
 #%% do ICA with ICSAR function
  
 S_best,  time_courses, x_train_residual_ts, Iq, n_clusters, S_all_info  = ICASAR(phUnw, bootstrapping_param, pixel_mask, n_comp, 
-                                             ica_param = ica_param, tsne_param = tsne_param, hdbscan_param = hdbscan_param)
+                                             ica_param = ica_param, tsne_param = tsne_param, hdbscan_param = hdbscan_param, 
+                                             figures = figures)
       
 
     
