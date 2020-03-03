@@ -1,17 +1,14 @@
 # ICASAR
-An algorithm for robustly appling sICA to InSAR data
+An algorithm for robustly appling sICA to InSAR data in order to isolate deformation signals and atmospheric signals.  Its use is detailed in the [GitHub Wiki](https://github.com/matthew-gaddes/ICASAR/wiki).  
+
+Gaddes et al., 2019 details its application to Sierra Negra (Galapagos Archipelago, Ecuador), where it was able to isolate the caldera floor uplift signal (source 1), and a topograhically correlated atmospheric phase screen (source 2):
 
 
-ICASAR applies spatial independent component analysis (sICA) to interferograms in a robust manner
-with the aim of retrieving the latent sources that combined to form them. Applying sICA to InSAR
-data that covers volcanic centres is discussed in Ebmeier (2016), and Gaddes et al. (2018), whilst the
-ICASO algorithm from which the ICASAR algorithm was derived is described in Himberg et al. (2004).
+![figure_5](https://user-images.githubusercontent.com/10498635/75799672-4c892c80-5d70-11ea-80a1-749aac2b89d2.png)
 
+<br><br/>
 
-The ICASAR algorithm is discussed fully in Gaddes et al. (2019), but is summarised here. It
-performs sICA many times with both bootstrapped samples of the data and dierent initiations of
-the un-mixing matrix. This produces a suite of many repeated sources, which we project onto a 2 D
-hyperplane using t-SNE and cluster using HDBSCAN. The source most representative of each cluster
-is then found, and a simple inversion performed to calculate the time course for each source (i.e. how
-strongly they are used to create each interferogram). If you use this software in your research, please
-cite it as Gaddes et al. (2019)
+The algorithm also provides tools to visualise the recovered sources in order for a user to determine how robust they are.  Note that the sources capturing the caldera floor uplift (blue points), form an isolated and compact cluster:
+
+![figure_4](https://user-images.githubusercontent.com/10498635/75799539-206dab80-5d70-11ea-9ebe-5ebdd5cf94af.png)
+
