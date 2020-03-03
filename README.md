@@ -1,5 +1,5 @@
 # ICASAR
-An algorithm for robustly appling sICA to InSAR data in order to isolate deformation signals and atmospheric signals.  
+An algorithm for robustly appling sICA to InSAR data in order to isolate deformation signals and atmospheric signals.  Its use is detailed in the [GitHub Wiki](https://github.com/matthew-gaddes/ICASAR/wiki).  
 
 Gaddes et al., 2019 details its application to Sierra Negra (Galapagos Archipelago, Ecuador), where it was able to isolate the caldera floor uplift signal (source 1), and a topograhically correlated atmospheric phase screen (source 2):
 
