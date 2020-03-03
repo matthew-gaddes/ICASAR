@@ -7,15 +7,21 @@ Created on Tue Dec 17 18:19:37 2019
 """
 
   
-def component_plot(spatial_map, pixel_mask, timecourse, shape, title, shared = 0, temporal_baselines = None):
+def component_plot(spatial_map, pixel_mask, timecourse, shape, title, shared = 0, 
+                   temporal_baselines = None, png_path = None):
     """
     Input:
         spatial map | pxc matrix of c component maps (p pixels)
         pixel_mask | mask to turn spaital maps back to regular grided masked arrays
         codings | cxt matrix of c time courses (t long)   
         shape | tuple | the shape of the grid that the spatial maps are reshaped to
+        title | string | figure tite and png filename (nb .png will be added, don't include here)
         shared | 0 or 1 | if 1, spatial maps share colorbar and time courses shared vertical axis
         Temporal_baselines | x axis values for time courses.  Useful if some data are missing (ie the odd 24 day ifgs in a time series of mainly 12 day)
+        png_path  | None or string | If None, no png output.  If string, will try and save as png in that folder and close figure
+        
+    Returns:
+        Figure, either as a window or saved as a png
         
     2017/02/17 | modified to use masked arrays that are given as vectors by spatial map, but can be converted back to 
                  masked arrays using the pixel mask    
@@ -24,8 +30,9 @@ def component_plot(spatial_map, pixel_mask, timecourse, shape, title, shared = 0
     2017/10/16 | remove limit on the number of componets to plot (was 5)
     2017/12/06 | Add a colorbar if the plots are shared, add an option for the time courses to be done in days
     2017/12/?? | add the option to pass temporal baselines to the function
-    
+    2020/03/03 | MEG | Add option to save figure as png and close window
     """
+    
     import numpy as np
     import numpy.ma as ma  
     import matplotlib.pyplot as plt
@@ -142,7 +149,10 @@ def component_plot(spatial_map, pixel_mask, timecourse, shape, title, shared = 0
         f.tight_layout(rect=[0, 0, 0.94, 1])
         cax = f.add_axes([0.94, 0.6, 0.01, 0.3])
         f.colorbar(im, cax=cax, orientation='vertical')
-        
+    
+    if png_path != None:                                                                # possibly save the output
+        f.savefig(f"{png_path}/{title}.png")
+        plt.close()    
         
         
 #%%
@@ -196,12 +206,18 @@ def maps_tcs_rescale(maps, tcs):
 
 #%%
 
-def pca_variance_line(pc_vals, title = ''):
+def pca_variance_line(pc_vals, title = '', png_path = None):
     """
     A function to display the cumulative variance in each dimension of some high D data
     Inputs:
         pc_vals | rank 1 array | variance in each dimension.  Most important dimension first.  
         title | string | figure title
+        png_path  | None or string | If None, no png output.  If string, will try and save as png in that folder and close figure
+    Returns:
+        figure, either as window or saved as a png
+    History:
+        2019/XX/XX | MEG | Written
+        2020/03/03 | MEG | Add option to save as png
     """
     import numpy as np
     import matplotlib.pyplot as plt
@@ -218,9 +234,12 @@ def pca_variance_line(pc_vals, title = ''):
     ax.set_ylabel('Cumulative Variance')
     ax.set_ylim([0, 1])
     ax.set_title(title)
+    f.canvas.set_window_title(title)
+    
+    if png_path != None:                                                                # possibly save the output
+        f.savefig(f"{png_path}/01_pca_variance_line.png")
+        plt.close()
 
-
-#%%
 
 #%%
         

@@ -7,7 +7,7 @@ Created on Tue May 29 11:23:10 2018
 
 
 
-def ICASAR(phUnw, bootstrapping_param, mask, n_comp, figures = True, scatter_zoom = 0.2,
+def ICASAR(phUnw, bootstrapping_param, mask, n_comp, figures = "window", scatter_zoom = 0.2,
            ica_param = (1e-4, 150), tsne_param = (30,12), hdbscan_param = (35,10)):
     """
     Inputs:
@@ -15,7 +15,7 @@ def ICASAR(phUnw, bootstrapping_param, mask, n_comp, figures = True, scatter_zoo
         bootstrapping_param | tuple | (number of ICA runs with bootstrap, number of ICA runs without bootstrapping )  e.g. (100,10)
         mask | rank 2 boolean | mask to convert the ifgs as rows into rank 2 masked arrays.  Used for figure outputs.  
         n_comp | int | Number of ocmponents that are retained from PCA and used as the input for ICA.  
-        figures | boolean | controls if figures are produced (and outputs to the screen)
+        figures | string,  "window" / "png" / "none" | controls if figures are produced, not none is the strin none, not the NoneType None
         scatter_zoom | float | Sets the size of the popup previews in the 2d clusters_by_max_Iq_no_noise figure.  
         hdbscan_param  | tuple | Used to control the clustering (min_cluster_size, min_samples)
         tsne_param     | tuple | Used to control the 2d manifold learning  (perplexity, early_exaggeration)
@@ -36,12 +36,30 @@ def ICASAR(phUnw, bootstrapping_param, mask, n_comp, figures = True, scatter_zoo
     # external functions
     import numpy as np
     import matplotlib.pyplot as plt
-    import hdbscan
-    from sklearn.manifold import TSNE                                    # t-distributed stochastic neighbour embedding
+    import hdbscan                                                               # used for clustering
+    from sklearn.manifold import TSNE                                            # t-distributed stochastic neighbour embedding
+    import shutil                                                                # used to make/remove folders etc
+    import os                                                                    # ditto
     
     from blind_signal_separation_funcitons import fastica_MEG, PCA_meg2
     from auxiliary_functions import  pca_variance_line, maps_tcs_rescale
     from auxiliary_functions import component_plot, bss_components_inversion
+    
+    # sort out various things for figures
+    
+    if figures not in ["window", "png", "none"]:                                                            # check figure input is correct
+        raise ValueError("'figures' should be 'window', 'png', or 'None'.  Exiting...")
+    else:
+        pass
+    if figures == "png":                                                                                    # if figures will be png, make 
+        folder_ICASAR_outputs = "./ICASAR_outputs"                                                          # this will be passed to various figure plotting functions
+        try:
+            shutil.rmtree(f"./ICASAR_outputs")                                                              # try to remove folder
+        except:
+            pass                                                                                            # but if can't, assume it's not there so can't be deleted
+        os.mkdir(f"./ICASAR_outputs")                                                                       # make folder for output
+    else:
+        folder_ICASAR_outputs = None
     
     n_converge_bootstrapping = bootstrapping_param[0]                 # unpack input tuples
     n_converge_no_bootstrapping = bootstrapping_param[1]
@@ -59,10 +77,11 @@ def ICASAR(phUnw, bootstrapping_param, mask, n_comp, figures = True, scatter_zoo
     # do sPCA once
     print('Performing PCA to whiten the data....', end = "")
     PC_vecs, PC_vals, PC_whiten_mat, PC_dewhiten_mat, x_mc, x_decorrelate, x_white = PCA_meg2(phUnwMC, verbose = False)    
-    if figures:
-        pca_variance_line(PC_vals, title = 'Variance in each dimension for the preliminary whitening')
-        x_decorrelate_rs, PC_vecs_rs = maps_tcs_rescale(x_decorrelate[:n_comp,:], PC_vecs[:,:n_comp])
-        component_plot(x_decorrelate_rs.T, mask, PC_vecs_rs.T, mask.shape, 'sPCA / whitening results', shared = 1)
+    x_decorrelate_rs, PC_vecs_rs = maps_tcs_rescale(x_decorrelate[:n_comp,:], PC_vecs[:,:n_comp])
+    if figures == "window" or figures == "png":
+        pca_variance_line(PC_vals, title = '01_PCA_variance_line', png_path = folder_ICASAR_outputs)
+        component_plot(x_decorrelate_rs.T, mask, PC_vecs_rs.T, mask.shape, title = '02_PCA_sources_and_tcs', shared = 1, 
+                       png_path = folder_ICASAR_outputs)
     print('Done!')
     
     
@@ -90,7 +109,7 @@ def ICASAR(phUnw, bootstrapping_param, mask, n_comp, figures = True, scatter_zoo
             n_loop += 1
         if n_loop == 100:                                                                                           # if we exited beacuse we were stuck in a loop, error message and stop
             print('Unable to bootstrap the data as the number of training data must be sufficently bigger than "n_components" sought that there are "n_components" unique items in a bootsrapped sample.  ')      # error message
-            sys.exit()        
+            import sys; sys.exit()        
         phUnwMC_bs = phUnwMC[input_ifg_args, :]                                                                   # bootstrapped smaple
         vecs_bs, _, _, _, _, _, x_white_bs = PCA_meg2(phUnwMC_bs, verbose = False)                               # pca on bootstrapped data
         x_white_bs_for_ica = x_white_bs[:n_comp, :]                                                              # reduce dimensionality
@@ -125,13 +144,13 @@ def ICASAR(phUnw, bootstrapping_param, mask, n_comp, figures = True, scatter_zoo
     
     # change data structure for sources, and compute similarities and distances between them.  
     print('Starting to compute the pairwise distance matrices....', end = '')
-    if bootstrapping is 'full':
+    if bootstrapping == 'full':
         S_hist_r2, S_hist_r3 = sources_list_to_r2_r3(S_hist_BS, mask)                          # combine both bootstrapped and non-bootstrapped.  
         D, S = pairwise_comparison(S_hist_r2)
-    elif bootstrapping is 'partial':
+    elif bootstrapping == 'partial':
         S_hist_r2, S_hist_r3 = sources_list_to_r2_r3(S_hist_BS + S_hist_no_BS, mask)                          # combine both bootstrapped and non-bootstrapped.      
         D, S = pairwise_comparison(S_hist_r2)                                           # pairwise for all the sources
-    elif bootstrapping is 'none':
+    elif bootstrapping == 'none':
         S_hist_r2, S_hist_r3 = sources_list_to_r2_r3(S_hist_no_BS, mask)                          # combine both bootstrapped and non-bootstrapped.  
         D, S = pairwise_comparison(S_hist_r2)
     print('Done!')
@@ -157,10 +176,10 @@ def ICASAR(phUnw, bootstrapping_param, mask, n_comp, figures = True, scatter_zoo
     xy_tsne = manifold_tsne.fit(D).embedding_
     print('Done!' )
     
-    if figures:
+    if figures == "window" or figures == "png":
         _ = plot_cluster_results(labels = labels_hdbscan, interactive = True, images_r3 = S_hist_r3, order = clusters_by_max_Iq_no_noise, Iq = Iq, 
-                               xy2 = xy_tsne, hull = False, set_zoom = scatter_zoom)
-        f4 = plt.subplots(); clusterer_precom.condensed_tree_.plot(select_clusters = True)
+                               title = '03_clustering_and_manifold', xy2 = xy_tsne, hull = False, set_zoom = scatter_zoom, png_path = folder_ICASAR_outputs)
+        #_ = plt.subplots(); clusterer_precom.condensed_tree_.plot(select_clusters = True)
     
     
     # Determine the number of clusters
@@ -191,8 +210,9 @@ def ICASAR(phUnw, bootstrapping_param, mask, n_comp, figures = True, scatter_zoo
     print('Done!')
     
     
-    if figures:
-        component_plot(S_best.T, mask, tcs.T, mask.shape, 'Chosen sources and time courses', shared = 1 )                # plot the sources chosen
+    if figures == "window" or figures == "png":
+        component_plot(S_best.T, mask, tcs.T, mask.shape, '04_ICASAR_sourcs_and_tcs', shared = 1,
+                       png_path = folder_ICASAR_outputs)                # plot the sources chosen
     
     
     
@@ -296,8 +316,8 @@ def cluster_quality_index(labels, S):
 
 
 def plot_cluster_results(labels = None, D = None, interactive = False, images_r3 = None, order = None, Iq = None, xy2 = None, 
-                         manifold = 'tsne', perplexity = 30, hull = True, set_zoom = 0.2, save = False, 
-                         title = None, BS_and_no_BS_settings = None): 
+                         manifold = 'tsne', perplexity = 30, hull = True, set_zoom = 0.2, 
+                         title = None, BS_and_no_BS_settings = None, png_path = None): 
     """
      A function to plot clustering results in 2d.  Interactive as hovering over a point reveals the source that it corresponds to.  
     Only the distance between each point (D) is important, and the x and y values are noramlly random. 
@@ -319,10 +339,10 @@ def plot_cluster_results(labels = None, D = None, interactive = False, images_r3
                             Should be lower than the number of data
         hull | boolean | If True, draw convex hulls around the clusters (with more than 3 points in them, as it's only a line for clusters of 2 points)
         set_zoom | flt | set the size of the interactive images of the source that pop up.  
-        save | boolean | if True, save as .png and close.  
         title | string | if supplied, applied to the figure and figure window
         BS_and_no_BS_settings | tuple | (number of bootsrapped runs, number components recovered in each run), e.g. (40,6) would mean that the first 40x6 recovered soruces came from bootsrapped
                                         runs, whilst the remainder (however many) came from non-bootstrapped runs.  
+        png_path  | None or string | If None, no png output.  If string, will try and save as png in that folder and close figure
         
         
     
@@ -339,6 +359,7 @@ def plot_cluster_results(labels = None, D = None, interactive = False, images_r3
     2018/06/27 | MEG: Unique colours for plots with more than 10 clusters, and the possibility of expanded legends to show more possible colours
     2018/06/28 | MEG: Add the option for no labels to be provided and all the points to be the same colour
     2018/06/29 | MEG: Add option to plot both bootrapped and non-bootstrapped samples on the same plot with a different marker style.  
+    2020/03/03 | MEG | Add option to set the path of the png saved.  
     
     
     """    
@@ -472,7 +493,7 @@ def plot_cluster_results(labels = None, D = None, interactive = False, images_r3
     # 3/6: create figure and plot scatter
     fig = plt.figure()
     if title is None:                                                   # if an argument was given for the title
-        fig.canvas.set_window_title('2d cluster representation')
+        fig.canvas.set_window_title(f'2d cluster representation')
     else:
         fig.canvas.set_window_title(title)
         fig.suptitle(title)
@@ -543,12 +564,9 @@ def plot_cluster_results(labels = None, D = None, interactive = False, images_r3
         fig.canvas.mpl_connect('motion_notify_event', hover)                    # add callback for mouse moves
     
     
-    if save:                                                                        # maybe save and close 
-        print('saving')
-        fig.savefig(f'clustering_output/clustering_with_{n_clusters}_clusters.png')
+    if png_path != None:                                                                # possibly save the output
+        fig.savefig(f"{png_path}/{title}.png")
         plt.close()
-    else:
-        plt.show()
     
     return xy2
 
