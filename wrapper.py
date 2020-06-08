@@ -14,19 +14,18 @@ import matplotlib.pyplot as plt
 import pickle                                    # used for opening synthetic data
 
 from ICASAR_functions import ICASAR
-from auxiliary_functions import col_to_ma, maps_tcs_rescale                 # 
+from auxiliary_functions import col_to_ma
 
 
 #%% Things to set
 
-n_comp = 5
-bootstrapping_param = (200, 0)                 # (number of runs with bootstrapping, number of runs without bootstrapping)
-hdbscan_param = (35, 10)                        # (min_cluster_size, min_samples)
-tsne_param = (30, 12)                       # (perplexity, early_exaggeration)
-ica_param = (1e-2, 150)                     # (tolerance, max iterations)
-figures = "png"                             # if png, saved in a folder as .png.  If window, open as interactive matplotlib figures
-                                            # default is "window" as 03_clustering_and_manifold is interactive.  
-
+ICASAR_settings = {"n_comp" : 5,                                    # number of components to recover with ICA (ie the number of PCA sources to keep)
+                    "bootstrapping_param" : (200, 000),               # (number of runs with bootstrapping, number of runs without bootstrapping)                    "hdbscan_param" : (35, 10),                        # (min_cluster_size, min_samples)
+                    "tsne_param" : (30, 12),                        # (perplexity, early_exaggeration)
+                    "ica_param" : (1e-2, 150),                      # (tolerance, max iterations)
+                    "figures" : "png+window"}                       # if png, saved in a folder as .png.  If window, open as interactive matplotlib figures,
+                                                                    # if 'png+window', both.  
+                                                                    # default is "window" as 03_clustering_and_manifold is interactive.  
 #%% Import the data 
 
 with open('synthetic_data.pkl', 'rb') as f:
@@ -68,9 +67,7 @@ fig3.canvas.set_window_title("Interferograms as row vectors and a mask")
 
 #%% do ICA with ICSAR function
  
-S_best,  time_courses, x_train_residual_ts, Iq, n_clusters, S_all_info  = ICASAR(phUnw, bootstrapping_param, pixel_mask, n_comp, 
-                                             ica_param = ica_param, tsne_param = tsne_param, hdbscan_param = hdbscan_param, 
-                                             figures = figures)
+S_best,  time_courses, x_train_residual_ts, Iq, n_clusters, S_all_info  = ICASAR(phUnw, pixel_mask, **ICASAR_settings) 
       
 
     

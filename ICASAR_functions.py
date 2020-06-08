@@ -7,16 +7,17 @@ Created on Tue May 29 11:23:10 2018
 
 
 
-def ICASAR(phUnw, bootstrapping_param, mask, n_comp, figures = "window", scatter_zoom = 0.2,
+def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter_zoom = 0.2,
            ica_param = (1e-4, 150), tsne_param = (30,12), hdbscan_param = (35,10)):
     """
     Inputs:
         phUnw | rank 2 array | ifgs as rows
-        bootstrapping_param | tuple | (number of ICA runs with bootstrap, number of ICA runs without bootstrapping )  e.g. (100,10)
         mask | rank 2 boolean | mask to convert the ifgs as rows into rank 2 masked arrays.  Used for figure outputs.  
+        bootstrapping_param | tuple | (number of ICA runs with bootstrap, number of ICA runs without bootstrapping )  e.g. (100,10)
         n_comp | int | Number of ocmponents that are retained from PCA and used as the input for ICA.  
-        figures | string,  "window" / "png" / "none" | controls if figures are produced, not none is the strin none, not the NoneType None
+        figures | string,  "window" / "png" / "none" / "png+window" | controls if figures are produced, not none is the strin none, not the NoneType None
         scatter_zoom | float | Sets the size of the popup previews in the 2d clusters_by_max_Iq_no_noise figure.  
+        ica_param | tuple | Used to control ICA, (ica_tol, ica_maxit)
         hdbscan_param  | tuple | Used to control the clustering (min_cluster_size, min_samples)
         tsne_param     | tuple | Used to control the 2d manifold learning  (perplexity, early_exaggeration)
         
@@ -30,7 +31,10 @@ def ICASAR(phUnw, bootstrapping_param, mask, n_comp, figures = "window", scatter
         S_all_info | dictionary| useful for custom plotting. Sources: all the sources in a rank 3 array (e.g. 500x500 x1200 for 6 sources recovered 200 times)
                                                             labels: label for each soure
                                                             xy: x and y coordinats for 2d representaion of all sources
-        
+    History:
+        2018/06/?? | MEG | Written
+        2019/11/?? | MEG | Rewrite to be more robust and readable
+        2020/06/03 | MEG | Update figure outputs.  
         
     """
     # external functions
@@ -40,26 +44,30 @@ def ICASAR(phUnw, bootstrapping_param, mask, n_comp, figures = "window", scatter
     from sklearn.manifold import TSNE                                            # t-distributed stochastic neighbour embedding
     import shutil                                                                # used to make/remove folders etc
     import os                                                                    # ditto
-    
+    # internal functions    
     from blind_signal_separation_funcitons import fastica_MEG, PCA_meg2
     from auxiliary_functions import  pca_variance_line, maps_tcs_rescale
     from auxiliary_functions import component_plot, bss_components_inversion
     
-    # sort out various things for figures
+
     
-    if figures not in ["window", "png", "none"]:                                                            # check figure input is correct
-        raise ValueError("'figures' should be 'window', 'png', or 'None'.  Exiting...")
+    
+    # sort out various things for figures
+    fig_kwargs = {"figures" : figures}
+    if figures not in ["window", "png", "png+window", "none"]:                                                            # check figure input is correct
+        raise ValueError("'figures' should be 'window', 'png', 'png+window', or 'None'.  Exiting...")
     else:
         pass
-    if figures == "png":                                                                                    # if figures will be png, make 
-        folder_ICASAR_outputs = "./ICASAR_outputs"                                                          # this will be passed to various figure plotting functions
+    if figures == "png" or figures == "png+window":                                                         # if figures will be png, make 
+        fig_kwargs['png_path'] = "./ICASAR_outputs"                                                          # this will be passed to various figure plotting functions
         try:
-            shutil.rmtree(f"./ICASAR_outputs")                                                              # try to remove folder
+            shutil.rmtree(fig_kwargs['png_path'])                                                              # try to remove folder
         except:
             pass                                                                                            # but if can't, assume it's not there so can't be deleted
-        os.mkdir(f"./ICASAR_outputs")                                                                       # make folder for output
+        os.mkdir(fig_kwargs['png_path'])                                                                       # make folder for output
     else:
         folder_ICASAR_outputs = None
+      
     
     n_converge_bootstrapping = bootstrapping_param[0]                 # unpack input tuples
     n_converge_no_bootstrapping = bootstrapping_param[1]
@@ -67,96 +75,65 @@ def ICASAR(phUnw, bootstrapping_param, mask, n_comp, figures = "window", scatter
     early_exaggeration = tsne_param[1]
     min_cluster_size = hdbscan_param[0]                                              
     min_samples = hdbscan_param[1] 
-    ica_tol = ica_param[0]
-    ica_maxit = ica_param[1]
     
     
     phUnwMC = phUnw - np.mean(phUnw, axis = 1)[:,np.newaxis]                                        # mean centre the data (along rows)
     n_ifgs = np.size(phUnwMC, axis = 0)     
        
-    # do sPCA once
+    # 1: do sPCA once
     print('Performing PCA to whiten the data....', end = "")
     PC_vecs, PC_vals, PC_whiten_mat, PC_dewhiten_mat, x_mc, x_decorrelate, x_white = PCA_meg2(phUnwMC, verbose = False)    
     x_decorrelate_rs, PC_vecs_rs = maps_tcs_rescale(x_decorrelate[:n_comp,:], PC_vecs[:,:n_comp])
-    if figures == "window" or figures == "png":
-        pca_variance_line(PC_vals, title = '01_PCA_variance_line', png_path = folder_ICASAR_outputs)
-        component_plot(x_decorrelate_rs.T, mask, PC_vecs_rs.T, mask.shape, title = '02_PCA_sources_and_tcs', shared = 1, 
-                       png_path = folder_ICASAR_outputs)
+       
+    if fig_kwargs['figures'] != "none":
+        pca_variance_line(PC_vals, title = '01_PCA_variance_line', **fig_kwargs)
+        component_plot(x_decorrelate_rs.T, mask, PC_vecs_rs.T, mask.shape, title = '02_PCA_sources_and_tcs', shared = 1, **fig_kwargs)
     print('Done!')
-    
-    
-    # do ICA multiple times
-    if n_converge_bootstrapping > 0 and n_converge_no_bootstrapping > 0:
-        bootstrapping = 'partial'
-    elif n_converge_bootstrapping == 0 and n_converge_no_bootstrapping > 0:
-        bootstrapping = 'none'
-    elif n_converge_bootstrapping > 0 and n_converge_no_bootstrapping == 0:
-        bootstrapping = 'full'    
-    
-    A_hist_no_BS = []
-    S_hist_no_BS = []
-    A_hist_BS = []
+   
+  
+    # 2: do ICA multiple times   
+    #    First with bootstrapping
+    A_hist_BS = []                                                                                      # ditto but with bootstrapping
     S_hist_BS = []
-    
     n_ica_converge = 0
     n_ica_fail = 0
     while n_ica_converge < n_converge_bootstrapping:
-        print(f"sICA with bootstrapping has converged {n_ica_converge} of {n_converge_bootstrapping} times.   ", end = "")
-        input_ifg_args = np.arange(n_comp-1)                                                                          # initiate as a crude way to get into the loop
-        n_loop = 0                                                                                                  # to count how many goes it takes to generate a good bootstrap sample
-        while len(np.unique(input_ifg_args)) < n_comp and n_loop < 100:                                            # try making a list of samples to bootstrap with providing it has enough unique items for subsequent pca to work
-            input_ifg_args = np.random.randint(0, n_ifgs, n_ifgs)                                                   # generate indexes of samples to select for bootstrapping 
-            n_loop += 1
-        if n_loop == 100:                                                                                           # if we exited beacuse we were stuck in a loop, error message and stop
-            print('Unable to bootstrap the data as the number of training data must be sufficently bigger than "n_components" sought that there are "n_components" unique items in a bootsrapped sample.  ')      # error message
-            import sys; sys.exit()        
-        phUnwMC_bs = phUnwMC[input_ifg_args, :]                                                                   # bootstrapped smaple
-        vecs_bs, _, _, _, _, _, x_white_bs = PCA_meg2(phUnwMC_bs, verbose = False)                               # pca on bootstrapped data
-        x_white_bs_for_ica = x_white_bs[:n_comp, :]                                                              # reduce dimensionality
-        W, S, A, _, _, ica_converged = fastica_MEG(x_white_bs_for_ica, n_comp=n_comp,  algorithm="parallel",        
-                                                               whiten=False, maxit=ica_maxit, tol=ica_tol)          # do ICA
-        if ica_converged is True:
-            A_dewhite = PC_dewhiten_mat[:,0:n_comp] @ A             # turn ICA mixing matrix back into a time course
-            S, A_dewhite = maps_tcs_rescale(S, A_dewhite)          # rescale so spatial maps have a range or 1 (so easy to compare)
-            A_hist_BS.append(A_dewhite)                             # record results
-            S_hist_BS.append(S)                                     # record results
+        S, A, ica_converged = bootstrap_ICA(phUnwMC, n_comp, bootstrap = True, ica_param = ica_param)
+        if ica_converged:
             n_ica_converge += 1
+            A_hist_BS.append(A)                                     # record results
+            S_hist_BS.append(S)                                     # record results
         else:
             n_ica_fail += 1
-       
+        print(f"sICA with bootstrapping has converged {n_ica_converge} of {n_converge_bootstrapping} times.   ", end = "")
+
+    #     and without bootstrapping
+    A_hist_no_BS = []                                                                                   # initiate to store time courses without bootstrapping
+    S_hist_no_BS = []                                                                                   # and recovered sources        
     n_ica_converge = 0                          # reset the counters for the second lot of ica
     n_ica_fail = 0
     while n_ica_converge < n_converge_no_bootstrapping:
-        print(f"sICA without bootstrapping has converged {n_ica_converge} of {n_converge_no_bootstrapping} times.   ", end = "")
-        x_white_for_ica = x_white[:n_comp,:]                                                                                        # reduce the number of components as required
-        W, S, A, _, _, ica_converged = fastica_MEG(x_white_for_ica, n_comp=n_comp,  algorithm="parallel",           
-                                                               whiten=False, maxit=ica_maxit, tol=ica_tol)                          # do ICA
-        if ica_converged is True:
-            A_dewhite = PC_dewhiten_mat[:,0:n_comp] @ A                                                                                 # ICA unmixing matrix back into time courses
-            S, A_dewhite = maps_tcs_rescale(S, A_dewhite)          # rescale so spatial maps have a range or 1 (so easy to compare)
-            A_hist_no_BS.append(A_dewhite)
-            S_hist_no_BS.append(S)
+        S, A, ica_converged = bootstrap_ICA(phUnwMC, n_comp, bootstrap = False, ica_param = ica_param,
+                                            X_whitened = x_white, dewhiten_matrix = PC_whiten_mat)
+        
+        if ica_converged:
             n_ica_converge += 1
+            A_hist_no_BS.append(A)                                     # record results
+            S_hist_no_BS.append(S)                                     # record results
         else:
             n_ica_fail += 1
-    del n_ica_converge, n_ica_fail
-    
-    
-    # change data structure for sources, and compute similarities and distances between them.  
+        print(f"sICA without bootstrapping has converged {n_ica_converge} of {n_converge_no_bootstrapping} times.   ", end = "")
+       
+    # 3: change data structure for sources, and compute similarities and distances between them.  
+    A_hist = A_hist_BS + A_hist_no_BS
+    S_hist = S_hist_BS + S_hist_no_BS
     print('Starting to compute the pairwise distance matrices....', end = '')
-    if bootstrapping == 'full':
-        S_hist_r2, S_hist_r3 = sources_list_to_r2_r3(S_hist_BS, mask)                          # combine both bootstrapped and non-bootstrapped.  
-        D, S = pairwise_comparison(S_hist_r2)
-    elif bootstrapping == 'partial':
-        S_hist_r2, S_hist_r3 = sources_list_to_r2_r3(S_hist_BS + S_hist_no_BS, mask)                          # combine both bootstrapped and non-bootstrapped.      
-        D, S = pairwise_comparison(S_hist_r2)                                           # pairwise for all the sources
-    elif bootstrapping == 'none':
-        S_hist_r2, S_hist_r3 = sources_list_to_r2_r3(S_hist_no_BS, mask)                          # combine both bootstrapped and non-bootstrapped.  
-        D, S = pairwise_comparison(S_hist_r2)
+    S_hist_r2, S_hist_r3 = sources_list_to_r2_r3(S_hist, mask)                          # combine both bootstrapped and non-bootstrapped.  
+    D, S = pairwise_comparison(S_hist_r2)
     print('Done!')
     
 
-    # Clustering with all the recovered sources   
+    #  4: Clustering with all the recovered sources   
     print('Starting to cluster the sources using HDBSCAN....', end = "")  
     clusterer_precom = hdbscan.HDBSCAN(metric = 'precomputed', min_cluster_size = min_cluster_size, 
                                        min_samples = min_samples, cluster_selection_method = 'leaf')
@@ -170,26 +147,26 @@ def ICASAR(phUnw, bootstrapping_param, mask, n_comp, figures = "window", scatter
     print('Done!')
     
     
-    # 2d manifold with all the recovered sources
+    #5:  2d manifold with all the recovered sources
     print('Starting to calculate the 2D manifold representation....', end = "")
     manifold_tsne = TSNE(n_components = 2, metric = 'precomputed', perplexity = perplexity, early_exaggeration = early_exaggeration)
     xy_tsne = manifold_tsne.fit(D).embedding_
     print('Done!' )
     
-    if figures == "window" or figures == "png":
+    
+    if fig_kwargs['figures'] != "none":
         _ = plot_cluster_results(labels = labels_hdbscan, interactive = True, images_r3 = S_hist_r3, order = clusters_by_max_Iq_no_noise, Iq = Iq, 
-                               title = '03_clustering_and_manifold', xy2 = xy_tsne, hull = False, set_zoom = scatter_zoom, png_path = folder_ICASAR_outputs)
-        #_ = plt.subplots(); clusterer_precom.condensed_tree_.plot(select_clusters = True)
+                                 title = '03_clustering_and_manifold', xy2 = xy_tsne, hull = False, set_zoom = scatter_zoom, **fig_kwargs)
+
     
-    
-    # Determine the number of clusters
+    # 6: Determine the number of clusters
     if np.min(labels_hdbscan) == (-1):                                      # if we have noise, 
         n_clusters = np.size(np.unique(labels_hdbscan)) - 1                 # noise doesn't count as a cluster so we -1 from number of clusters
     else:
         n_clusters = np.size(np.unique(labels_hdbscan))                     # but if no noise, number of clusters is just number of different labels
         
         
-    # Centrotypes (object that is most similar to all others in the cluster)
+    # 7:  Centrotypes (object that is most similar to all others in the cluster)
     print('Calculating the centrotypes and associated time courses...', end = '')
     S_best_args = np.zeros((n_clusters, 1)).astype(int)       
     for i, clust_number in enumerate(clusters_by_max_Iq_no_noise):                              # loop through each cluster in order of how good they are
@@ -200,30 +177,97 @@ def ICASAR(phUnw, bootstrapping_param, mask, n_comp, figures = "window", scatter
     S_best = np.copy(S_hist_r2[np.ravel(S_best_args),:])                                        # these are the centrotype sources
     del source_index, S_this_cluster, in_cluster_arg, S_best_args                               # tidy up    
     
-    # Time courses using centrotypes
-    tcs = np.zeros((n_ifgs, n_clusters))                                                    # store time courses as columns    
-    source_residuals = np.zeros((n_ifgs,1))                                                 # initiate array to store these
+    # 8: Time courses using centrotypes
+    tcs = np.zeros((n_ifgs, n_clusters))                                                        # store time courses as columns    
+    source_residuals = np.zeros((n_ifgs,1))                                                     # initiate array to store these
     for i in range(n_ifgs):
-        m, residual_centrotypes = bss_components_inversion(S_best, phUnwMC[i,:])                          # fit each of the training ifgs with the chosen ICs
-        tcs[i,:] = m                                                                              # store time course
-        source_residuals[i,0] = residual_centrotypes                                                                   # if bootstrapping, as sources come from bootstrapped data they are better for doing the fitting
+        m, residual_centrotypes = bss_components_inversion(S_best, phUnwMC[i,:])                # fit each of the training ifgs with the chosen ICs
+        tcs[i,:] = m                                                                            # store time course
+        source_residuals[i,0] = residual_centrotypes                                            # if bootstrapping, as sources come from bootstrapped data they are better for doing the fitting
     print('Done!')
     
     
-    if figures == "window" or figures == "png":
-        component_plot(S_best.T, mask, tcs.T, mask.shape, '04_ICASAR_sourcs_and_tcs', shared = 1,
-                       png_path = folder_ICASAR_outputs)                # plot the sources chosen
-    
-    
-    
-    S_all_info = {'sources' : S_hist_r3,
+    if fig_kwargs['figures'] != "none":
+        component_plot(S_best.T, mask, tcs.T, mask.shape, '04_ICASAR_sourcs_and_tcs', shared = 1, **fig_kwargs)         # plot the sources chosen
+        
+    S_all_info = {'sources' : S_hist_r3,                                                                # package into a dict to return
                   'labels' : labels_hdbscan,
                   'xy' : xy_tsne       }
     
-  
     return S_best,  tcs, source_residuals, Iq_sorted, n_clusters, S_all_info
         
+#%%
+
+def bootstrap_ICA(X, n_comp, bootstrap = True, ica_param = (1e-4, 150), 
+                  X_whitened = None, dewhiten_matrix = None):
+    """  A function to perform ICA either with or without boostrapping.  
+    If not performing bootstrapping, performance can be imporoved by passing the whitened data and the dewhitening matrix
+    (so that PCA does not have to be peroformed).  
     
+    Inputs:
+        X | rank2 array | data as row vectors (ie n_variables x n_samples)
+        n_comp | int | number of sources to recover 
+        X_whitened | rank2 array | data as row vectors (ie n_variables x n_samples), but whitened (useful if not bootstrapping)
+        ica_param | tuple | Used to control ICA, (ica_tol, ica_maxit)
+        X_whitened | rank2 array | data as row vectors (e.g. 10 x 20,000 for 10 ifgs of 20000 pixels), but whitened.  Useful to pass to function if not bootstapping as 
+                                    this can then be calculated only once.  
+        dewhiten_matrix | rank2 array | Converts the time courses recovered when using whitened data back to unwhiteend.  
+                                        size is n_ifgs x n_sources.  
+                                        X_white = A x S
+                                        X = dewhiten x A x S
+                                        Needed if not bootstrapping and don't want to  do PCA each time (as above)
+    
+    Returns:
+        S | rank2 array | sources as row vectors (ie n_sources x n_samples)
+        A | rank 2 array | time courses as columns (ie n_ifgs x n_sources)
+        ica_converged | boolean | True is the FastICA algorithm does converge.  
+        
+    History:
+        2020/06/05 | MEG | Written
+    
+    """
+    import numpy as np
+    from blind_signal_separation_funcitons import PCA_meg2, fastica_MEG
+    from auxiliary_functions import  maps_tcs_rescale
+    n_ifgs = X.shape[0]
+    
+    # 0: do the bootstrapping and determine if we need to do PCA
+    if bootstrap:
+        pca_needed = True                                                                                            # PCA will always be needed if bootstrapping 
+        input_ifg_args = np.arange(n_comp-1)                                                                          # initiate as a crude way to get into the loop
+        n_loop = 0                                                                                                   # to count how many goes it takes to generate a good bootstrap sample
+        while len(np.unique(input_ifg_args)) < n_comp and n_loop < 100:                                              # try making a list of samples to bootstrap with providing it has enough unique items for subsequent pca to work
+            input_ifg_args = np.random.randint(0, n_ifgs, n_ifgs)                                                    # generate indexes of samples to select for bootstrapping 
+            n_loop += 1
+        if n_loop == 100:                                                                                            # if we exited beacuse we were stuck in a loop, error message and stop
+            raise Exception(f'Unable to bootstrap the data as the number of training data must be sufficently'
+                            f' bigger than "n_components" sought that there are "n_components" unique items in'
+                            f' a bootsrapped sample.  ')                                                             # error message
+        X = X[input_ifg_args, :]                                                                              # bootstrapped smaple
+    else:                                                                                                           # if we're not bootstrapping, need to work out if we actually need to do PCA
+        # import ipdb; ipdb.set_trace()
+        if X_whitened is not None and dewhiten_matrix is not None:
+            pca_needed = False
+        else:
+            pca_needed = True
+            print(f"Even though bootstrapping is not being used, PCA is being performed.  "
+                  f"This step could be sped up significantly by running PCA beforehand and "
+                  f"computing 'X_whiten' and 'dewhiten_matrix' only once.  ")
+        
+    #import ipdb; ipdb.set_trace()
+    # 1 get whitened data using PCA, if we need to (ie if X_whitened and dewhiten_matrix aren't provided)
+    if pca_needed:
+        pca_vecs, _, _, dewhiten_matrix, _, _, X_whitened = PCA_meg2(X, verbose = False)                               # pca on bootstrapped data
+    X_whitened = X_whitened[:n_comp,]                                                                     # reduce dimensionality
+    
+    # 2: Do ICA on whitened data
+    W, S, A_white, _, _, ica_converged = fastica_MEG(X_whitened, n_comp=n_comp,  algorithm="parallel",        
+                                               whiten=False, maxit=ica_param[1], tol = ica_param[0])          # do ICA
+
+    A = dewhiten_matrix[:,0:n_comp] @ A_white                                         # turn ICA mixing matrix back into a time course
+    S, A = maps_tcs_rescale(S, A)                                                     # rescale so spatial maps have a range or 1 (so easy to compare)
+    
+    return S, A, ica_converged
 
 
 
@@ -317,7 +361,7 @@ def cluster_quality_index(labels, S):
 
 def plot_cluster_results(labels = None, D = None, interactive = False, images_r3 = None, order = None, Iq = None, xy2 = None, 
                          manifold = 'tsne', perplexity = 30, hull = True, set_zoom = 0.2, 
-                         title = None, BS_and_no_BS_settings = None, png_path = None): 
+                         title = "2d manifold of sources", BS_and_no_BS_settings = None, figures = 'window', png_path = './'): 
     """
      A function to plot clustering results in 2d.  Interactive as hovering over a point reveals the source that it corresponds to.  
     Only the distance between each point (D) is important, and the x and y values are noramlly random. 
@@ -342,7 +386,8 @@ def plot_cluster_results(labels = None, D = None, interactive = False, images_r3
         title | string | if supplied, applied to the figure and figure window
         BS_and_no_BS_settings | tuple | (number of bootsrapped runs, number components recovered in each run), e.g. (40,6) would mean that the first 40x6 recovered soruces came from bootsrapped
                                         runs, whilst the remainder (however many) came from non-bootstrapped runs.  
-        png_path  | None or string | If None, no png output.  If string, will try and save as png in that folder and close figure
+        figures | string,  "window" / "png" / "png+window" | controls if figures are produced (either as a window, saved as a png, or both)
+        png_path | string | if a png is to be saved, a path to a folder can be supplied, or left as default to write to current directory.  
         
         
     
@@ -454,10 +499,10 @@ def plot_cluster_results(labels = None, D = None, interactive = False, images_r3
 
     # 1/6: xy positions for points need to be calculated if not provided
     if xy2 is None:                                                                     # if we aren't supplied with (xy) coords for each point, make them
-        if manifold is 'tsne':
+        if manifold == 'tsne':
             manifold_tsne = TSNE(n_components = 2, metric = 'precomputed', perplexity = perplexity)
             xy2 = manifold_tsne.fit(D).embedding_
-        elif manifold is 'mds':
+        elif manifold == 'mds':
             manifold_mds = MDS(n_components=2, dissimilarity='precomputed')
             xy2 = manifold_mds.fit(D).embedding_        
         else:
@@ -564,19 +609,19 @@ def plot_cluster_results(labels = None, D = None, interactive = False, images_r3
         fig.canvas.mpl_connect('motion_notify_event', hover)                    # add callback for mouse moves
     
     
-    if png_path != None:                                                                # possibly save the output
+    if figures == 'window':                                                                 # possibly save the output
+        pass
+    elif figures == "png":
         fig.savefig(f"{png_path}/{title}.png")
         plt.close()
+    elif figures == 'png+window':
+        fig.savefig(f"{png_path}/{title}.png")
+    else:
+        pass
     
     return xy2
 
 
 
-#%%
-######################################################################################################################################################
-######################################################################################################################################################
-#                            Taken from other scripts for Github
-######################################################################################################################################################
-######################################################################################################################################################
 
   

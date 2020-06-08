@@ -80,9 +80,7 @@ def fastica_MEG(X, n_comp=None,
     """
     
     import numpy as np
-    from scipy import linalg
-    import types
-    
+    from scipy import linalg 
     
     
     def _ica_def(X, tol, g, gprime, fun_args, maxit, w_init):
@@ -314,10 +312,10 @@ def PCA_meg2(X, verbose = False, return_dewhiten = True):
         covs_recip_mat = np.diag(covs_recip)
         whiten_mat = (covs_recip_mat @ vecs.T)
         if return_dewhiten:
-            dewhiten_mat = np.linalg.pinv(whiten_mat)       # as always loose a dimension with compast trick, have to use pseudoinverse
-    else:                                                   # or do PCA normally
-        cov_mat = np.cov(X)                                           # dims by dims covariance matrix
-        vals_noOrder, vecs_noOrder = np.linalg.eigh(cov_mat)                            # vectors (vecs) are columns, not not ordered
+            dewhiten_mat = np.linalg.pinv(whiten_mat)                           # as always loose a dimension with compact trick, have to use pseudoinverse
+    else:                                                                       # or do PCA normally
+        cov_mat = np.cov(X)                                                     # dims by dims covariance matrix
+        vals_noOrder, vecs_noOrder = np.linalg.eigh(cov_mat)                    # vectors (vecs) are columns, not not ordered
         order = np.argsort(vals_noOrder)[::-1]                                  # get order of eigenvalues descending
         vals = vals_noOrder[order]                                              # reorder eigenvalues
         vals = np.abs(vals)                                                     # do to floatint point arithmetic some tiny ones can be nagative which is problematic with the later square rooting

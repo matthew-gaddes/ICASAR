@@ -8,7 +8,7 @@ Created on Tue Dec 17 18:19:37 2019
 
   
 def component_plot(spatial_map, pixel_mask, timecourse, shape, title, shared = 0, 
-                   temporal_baselines = None, png_path = None):
+                   temporal_baselines = None, figures = "window",  png_path = './'):
     """
     Input:
         spatial map | pxc matrix of c component maps (p pixels)
@@ -18,7 +18,8 @@ def component_plot(spatial_map, pixel_mask, timecourse, shape, title, shared = 0
         title | string | figure tite and png filename (nb .png will be added, don't include here)
         shared | 0 or 1 | if 1, spatial maps share colorbar and time courses shared vertical axis
         Temporal_baselines | x axis values for time courses.  Useful if some data are missing (ie the odd 24 day ifgs in a time series of mainly 12 day)
-        png_path  | None or string | If None, no png output.  If string, will try and save as png in that folder and close figure
+        figures | string,  "window" / "png" / "png+window" | controls if figures are produced (either as a window, saved as a png, or both)
+        png_path | string | if a png is to be saved, a path to a folder can be supplied, or left as default to write to current directory.  
         
     Returns:
         Figure, either as a window or saved as a png
@@ -145,14 +146,67 @@ def component_plot(spatial_map, pixel_mask, timecourse, shape, title, shared = 0
             ax_all[1,i].set_ylim([np.min(timecourse) , np.max(timecourse)])
             
             
-    if shared == 1:
+    if shared == 1:                                                             # if the colourbar is shared between each subplot, the axes need extending to make space for it.
         f.tight_layout(rect=[0, 0, 0.94, 1])
         cax = f.add_axes([0.94, 0.6, 0.01, 0.3])
         f.colorbar(im, cax=cax, orientation='vertical')
-    
-    if png_path != None:                                                                # possibly save the output
+  
+    if figures == 'window':                                                                 # possibly save the output
+        pass
+    elif figures == "png":
         f.savefig(f"{png_path}/{title}.png")
-        plt.close()    
+        plt.close()
+    elif figures == 'png+window':
+        f.savefig(f"{png_path}/{title}.png")
+    else:
+        pass
+    
+#%%
+
+
+def pca_variance_line(pc_vals, title = '', figures = 'window', png_path = './'):
+    """
+    A function to display the cumulative variance in each dimension of some high D data
+    Inputs:
+        pc_vals | rank 1 array | variance in each dimension.  Most important dimension first.  
+        title | string | figure title
+        figures | string,  "window" / "png" / "png+window" | controls if figures are produced (either as a window, saved as a png, or both)
+        png_path | string or None | if a png is to be saved, a path to a folder can be supplied, or left as default to write to current directory.  
+    Returns:
+        figure, either as window or saved as a png
+    History:
+        2019/XX/XX | MEG | Written
+        2020/03/03 | MEG | Add option to save as png
+    """
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from matplotlib.ticker import MaxNLocator
+    
+    
+    f, ax = plt.subplots()
+    pc_vals_cs = np.concatenate((np.array([0]), np.cumsum(pc_vals)))
+    x_vals = np.arange(len(pc_vals_cs)) 
+    ax.plot(x_vals, pc_vals_cs/pc_vals_cs[-1])
+    ax.scatter(x_vals, pc_vals_cs/pc_vals_cs[-1])
+    ax.set_xlabel('Component number')
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    ax.set_ylabel('Cumulative Variance')
+    ax.set_ylim([0, 1])
+    ax.set_title(title)
+    f.canvas.set_window_title(title)
+    
+
+    if figures == 'window':
+        pass
+    elif figures == "png":
+        f.savefig(f"{png_path}/01_pca_variance_line.png")
+        plt.close()
+    elif figures == 'png+window':
+        f.savefig(f"{png_path}/01_pca_variance_line.png")
+    else:
+        pass
+        
+        
         
         
 #%%
@@ -205,45 +259,7 @@ def maps_tcs_rescale(maps, tcs):
 
 
 #%%
-
-def pca_variance_line(pc_vals, title = '', png_path = None):
-    """
-    A function to display the cumulative variance in each dimension of some high D data
-    Inputs:
-        pc_vals | rank 1 array | variance in each dimension.  Most important dimension first.  
-        title | string | figure title
-        png_path  | None or string | If None, no png output.  If string, will try and save as png in that folder and close figure
-    Returns:
-        figure, either as window or saved as a png
-    History:
-        2019/XX/XX | MEG | Written
-        2020/03/03 | MEG | Add option to save as png
-    """
-    import numpy as np
-    import matplotlib.pyplot as plt
-    from matplotlib.ticker import MaxNLocator
-    
-    
-    f, ax = plt.subplots()
-    pc_vals_cs = np.concatenate((np.array([0]), np.cumsum(pc_vals)))
-    x_vals = np.arange(len(pc_vals_cs)) 
-    ax.plot(x_vals, pc_vals_cs/pc_vals_cs[-1])
-    ax.scatter(x_vals, pc_vals_cs/pc_vals_cs[-1])
-    ax.set_xlabel('Component number')
-    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-    ax.set_ylabel('Cumulative Variance')
-    ax.set_ylim([0, 1])
-    ax.set_title(title)
-    f.canvas.set_window_title(title)
-    
-    if png_path != None:                                                                # possibly save the output
-        f.savefig(f"{png_path}/01_pca_variance_line.png")
-        plt.close()
-
-
-#%%
-        
-    
+  
     
 def bss_components_inversion(sources, interferogram):
     """
