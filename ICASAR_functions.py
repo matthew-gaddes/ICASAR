@@ -108,7 +108,7 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
             S_hist_BS.append(S)                                     # record results
         else:
             n_ica_fail += 1
-        print(f"sICA with bootstrapping has converged {n_ica_converge} of {n_converge_bootstrapping} times.   ", end = "")
+        print(f"sICA with bootstrapping has converged {n_ica_converge} of {n_converge_bootstrapping} times.   \n")
 
     #     and without bootstrapping
     A_hist_no_BS = []                                                                                   # initiate to store time courses without bootstrapping
@@ -125,7 +125,7 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
             S_hist_no_BS.append(S)                                     # record results
         else:
             n_ica_fail += 1
-        print(f"sICA without bootstrapping has converged {n_ica_converge} of {n_converge_no_bootstrapping} times.   ", end = "")
+        print(f"sICA without bootstrapping has converged {n_ica_converge} of {n_converge_no_bootstrapping} times.   \n",)
        
     # 3: change data structure for sources, and compute similarities and distances between them.  
     A_hist = A_hist_BS + A_hist_no_BS
@@ -223,10 +223,11 @@ def bootstrap_ICA(X, n_comp, bootstrap = True, ica_param = (1e-4, 150),
     Returns:
         S | rank2 array | sources as row vectors (ie n_sources x n_samples)
         A | rank 2 array | time courses as columns (ie n_ifgs x n_sources)
-        ica_converged | boolean | True is the FastICA algorithm does converge.  
+        ica_success | boolean | True is the FastICA algorithm does converge.  
         
     History:
         2020/06/05 | MEG | Written
+        2020/06/09 | MEG | Update to able to hand the case in which PCA fails (normally to do with finding the inverse of a matrix)
     
     """
     import numpy as np
@@ -257,20 +258,26 @@ def bootstrap_ICA(X, n_comp, bootstrap = True, ica_param = (1e-4, 150),
                   f"This step could be sped up significantly by running PCA beforehand and "
                   f"computing 'X_whiten' and 'dewhiten_matrix' only once.  ")
         
-    #import ipdb; ipdb.set_trace()
     # 1 get whitened data using PCA, if we need to (ie if X_whitened and dewhiten_matrix aren't provided)
     if pca_needed:
-        pca_vecs, _, _, dewhiten_matrix, _, _, X_whitened = PCA_meg2(X, verbose = False)                               # pca on bootstrapped data
-    X_whitened = X_whitened[:n_comp,]                                                                     # reduce dimensionality
-    
-    # 2: Do ICA on whitened data
-    W, S, A_white, _, _, ica_converged = fastica_MEG(X_whitened, n_comp=n_comp,  algorithm="parallel",        
-                                               whiten=False, maxit=ica_param[1], tol = ica_param[0])          # do ICA
-
-    A = dewhiten_matrix[:,0:n_comp] @ A_white                                         # turn ICA mixing matrix back into a time course
-    S, A = maps_tcs_rescale(S, A)                                                     # rescale so spatial maps have a range or 1 (so easy to compare)
-    
-    return S, A, ica_converged
+        try:
+            pca_vecs, _, _, dewhiten_matrix, _, _, X_whitened = PCA_meg2(X, verbose = False)                               # pca on bootstrapped data
+            pca_success = True
+        except:
+            pca_success = False
+    else:
+        pca_success = True
+            
+    if pca_success:                                                                                         # If PCA was a success, do ICA (note, if not neeed, success is set to True)
+        X_whitened = X_whitened[:n_comp,]                                                                     # reduce dimensionality
+        W, S, A_white, _, _, ica_success = fastica_MEG(X_whitened, n_comp=n_comp,  algorithm="parallel",        
+                                                   whiten=False, maxit=ica_param[1], tol = ica_param[0])          # do ICA
+        A = dewhiten_matrix[:,0:n_comp] @ A_white                                         # turn ICA mixing matrix back into a time courses (ie dewhiten)
+        S, A = maps_tcs_rescale(S, A)                                                     # rescale so spatial maps have a range or 1 (so easy to compare)
+        return S, A, ica_success
+    else:                                                                                                   # or if not a success, say that 
+        ica_success = False
+        return None, None, ica_success
 
 
 
