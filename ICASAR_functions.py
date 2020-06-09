@@ -35,6 +35,7 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
         2018/06/?? | MEG | Written
         2019/11/?? | MEG | Rewrite to be more robust and readable
         2020/06/03 | MEG | Update figure outputs.  
+        2020/06/09 | MEG | Add a raise Exception so that data cannot have nans in it.  
         
     """
     # external functions
@@ -49,7 +50,9 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
     from auxiliary_functions import  pca_variance_line, maps_tcs_rescale
     from auxiliary_functions import component_plot, bss_components_inversion
     
-
+    # Check if the data are suitable
+    if np.max(np.isnan(phUnw)):
+        raise Exception("Unable to proceed as the data ('phUnw') contains Nans.  ")
     
     
     # sort out various things for figures

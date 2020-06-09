@@ -273,20 +273,25 @@ def PCA_meg2(X, verbose = False, return_dewhiten = True):
         x_white | 2d | mean centered and decorellated and unit variance in each dimension (ie whitened)
         
     
-    2016/12/16 | updated to python 3.5
-    2016/03/29 | overhaul to include whitening
-    2017/07/19 | include compact trick PCA and automatically determine which to use 
-    2017/11/16 | fix bug in the order of eigenvectors and values - descending order now
-    2018/01/16 | fix bug in how covariance matrix is caluculated for compact trick case (now dividing by samples, which
-                 gives the same results as doing it with np.cov [which is used in the normal case])
-    2018/01/17 | swith to eigh (from eig) as this doesn't give complex results (such as (1.2i + 1.2e17j))
-                 Take abs value of eigenvalues as some of the tiny ones can become negative (floating point effect)
-    2018/02/12 | fix a bug in the compact trick PCA so that vectors are now unit length and outputs correct.  
-    2018/02/23 | add option to no return the dewhitening matrix as the pseudo inverse needed for this can fail with 
-                 very large matrices.  
+    2016/12/16 | MEG |  updated to python 3.5
+    2016/03/29 | MEG |  overhaul to include whitening
+    2017/07/19 | MEG |  include compact trick PCA and automatically determine which to use 
+    2017/11/16 | MEG | fix bug in the order of eigenvectors and values - descending order now
+    2018/01/16 | MEG | fix bug in how covariance matrix is caluculated for compact trick case (now dividing by samples, which
+                       gives the same results as doing it with np.cov [which is used in the normal case])
+    2018/01/17 | MEG | Swith to eigh (from eig) as this doesn't give complex results (such as (1.2i + 1.2e17j))
+                       Take abs value of eigenvalues as some of the tiny ones can become negative (floating point effect)
+    2018/02/12 | MEG | fix a bug in the compact trick PCA so that vectors are now unit length and outputs correct.  
+    2018/02/23 | MEG | add option to no return the dewhitening matrix as the pseudo inverse needed for this can fail with 
+                       very large matrices.  
+    2020/06/09 | MEG | Add a raise Exception so that data cannot have nans in it.  
     """
     
     import numpy as np
+
+    # Check if the data are suitable
+    if np.max(np.isnan(X)):
+        raise Exception("Unable to proceed as the data ('X') contains Nans.  ")
     
     if not return_dewhiten:
         print('Will not return the dewhitening matrix.  ')
