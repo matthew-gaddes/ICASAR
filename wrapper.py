@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 import pickle                                    # used for opening synthetic data
 
 from ICASAR_functions import ICASAR
-from auxiliary_functions import col_to_ma
+from auxiliary_functions import col_to_ma, r2_to_r3
 
 
 #%% Things to set
@@ -23,6 +23,7 @@ ICASAR_settings = {"n_comp" : 5,                                    # number of 
                     "bootstrapping_param" : (200, 000),               # (number of runs with bootstrapping, number of runs without bootstrapping)                    "hdbscan_param" : (35, 10),                        # (min_cluster_size, min_samples)
                     "tsne_param" : (30, 12),                        # (perplexity, early_exaggeration)
                     "ica_param" : (1e-2, 150),                      # (tolerance, max iterations)
+                    "ge_kmz"    :  True,
                     "figures" : "png+window"}                       # if png, saved in a folder as .png.  If window, open as interactive matplotlib figures,
                                                                     # if 'png+window', both.  
                                                                     # default is "window" as 03_clustering_and_manifold is interactive.  
@@ -33,6 +34,9 @@ with open('synthetic_data.pkl', 'rb') as f:
     S_synth = pickle.load(f)
     N_dc = pickle.load(f)
     pixel_mask = pickle.load(f)
+    lons = pickle.load(f)
+    lats = pickle.load(f)
+   
     
 
 #%% Make synthetic time series and view it
@@ -67,27 +71,6 @@ fig3.canvas.set_window_title("Interferograms as row vectors and a mask")
 
 #%% do ICA with ICSAR function
  
-S_best,  time_courses, x_train_residual_ts, Iq, n_clusters, S_all_info  = ICASAR(phUnw, pixel_mask, **ICASAR_settings) 
+S_best,  time_courses, x_train_residual_ts, Iq, n_clusters, S_all_info  = ICASAR(phUnw, pixel_mask, lons=lons, lats=lats, **ICASAR_settings) 
       
-
-    
-
-#%%
-
-import simplekml
-kml = simplekml.Kml()
-ground = kml.newgroundoverlay(name='GroundOverlay')
-ground.icon.href = './ICASAR_outputs/01_pca_variance_line.png'
-ground.gxlatlonquad.coords = [(18.410524,-33.903972),(18.411429,-33.904171),
-                              (18.411757,-33.902944),(18.410850,-33.902767)]
-# or
-#ground.latlonbox.north = -33.902828
-#ground.latlonbox.south = -33.904104
-#ground.latlonbox.east =  18.410684
-#ground.latlonbox.west =  18.411633
-#ground.latlonbox.rotation = -14
-kml.save("GroundOverlay.kml")
-
-
-
 

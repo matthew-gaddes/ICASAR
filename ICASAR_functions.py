@@ -7,8 +7,9 @@ Created on Tue May 29 11:23:10 2018
 
 
 
-def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter_zoom = 0.2,
-           ica_param = (1e-4, 150), tsne_param = (30,12), hdbscan_param = (35,10)):
+def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter_zoom = 0.2, 
+           ica_param = (1e-4, 150), tsne_param = (30,12), hdbscan_param = (35,10),
+           lons = None, lats = None, ge_kmz = True):
     """
     Inputs:
         phUnw | rank 2 array | ifgs as rows
@@ -20,6 +21,10 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
         ica_param | tuple | Used to control ICA, (ica_tol, ica_maxit)
         hdbscan_param  | tuple | Used to control the clustering (min_cluster_size, min_samples)
         tsne_param     | tuple | Used to control the 2d manifold learning  (perplexity, early_exaggeration)
+        lons | rank 1 array | lons of each pixel in phUnw
+        lats | rank 1 array | lats of each pixel in phUnw
+        ge_kmz | Boolean | If Ture and lons and lats are provided, a .kmz of the ICs is produced for viewing in GoogleEarth
+        
         
     
     Outputs:
@@ -49,6 +54,7 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
     from blind_signal_separation_funcitons import fastica_MEG, PCA_meg2
     from auxiliary_functions import  pca_variance_line, maps_tcs_rescale
     from auxiliary_functions import component_plot, bss_components_inversion
+    from auxiliary_functions import r2_to_r3, r2_arrays_to_googleEarth
     
     # Check if the data are suitable
     if np.max(np.isnan(phUnw)):
@@ -192,6 +198,13 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
     
     if fig_kwargs['figures'] != "none":
         component_plot(S_best.T, mask, tcs.T, mask.shape, '04_ICASAR_sourcs_and_tcs', shared = 1, **fig_kwargs)         # plot the sources chosen
+        
+        
+    if ge_kmz and (lons is not None) and (lats is not None):
+        print('Creating a Google Earth .kmz of the geocoded independent components... ', end = '')
+        S_best_r3 = r2_to_r3(S_best, mask)
+        r2_arrays_to_googleEarth(S_best_r3, lons, lats, 'IC')
+        print('Done!')
         
     S_all_info = {'sources' : S_hist_r3,                                                                # package into a dict to return
                   'labels' : labels_hdbscan,

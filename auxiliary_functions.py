@@ -311,3 +311,82 @@ def col_to_ma(col, pixel_mask):
     return source
 
 
+#%% taken from insar_tools.py
+
+def r2_to_r3(ifgs_r2, mask):
+    """ Given a rank2 of ifgs as row vectors, convert it to a rank3. 
+    Inputs:
+        ifgs_r2 | rank 2 array | ifgs as row vectors 
+        mask | rank 2 array | to convert a row vector ifg into a rank 2 masked array        
+    returns:
+        phUnw | rank 3 array | n_ifgs x height x width
+    History:
+        2020/06/10 | MEG  | Written
+    """
+    import numpy as np
+    import numpy.ma as ma
+    
+    n_ifgs = ifgs_r2.shape[0]
+    ny, nx = col_to_ma(ifgs_r2[0,], mask).shape                                   # determine the size of an ifg when it is converter from being a row vector
+    
+    ifgs_r3 = np.zeros((n_ifgs, ny, nx))                                                # initate to store new ifgs
+    for ifg_n, ifg_row in enumerate(ifgs_r2):                                           # loop through all ifgs
+        ifgs_r3[ifg_n,] = col_to_ma(ifg_row, mask)                                  
+    
+    mask_r3 = np.repeat(mask[np.newaxis,], n_ifgs, axis = 0)                            # expand the mask from r2 to r3
+    ifgs_r3_ma = ma.array(ifgs_r3, mask = mask_r3)                                      # and make a masked array    
+    return ifgs_r3_ma
+
+
+#%% Taken from small_plot_functions.py
+
+
+def r2_arrays_to_googleEarth(images_r3_ma, lons, lats, layer_name_prefix = 'layer', kmz_filename = 'ICs'):
+    """ Given one or several arrays in a rank3 array, create a multilayer Google Earth file (.kmz) of them.  
+    Inputs:
+        images_r3_ma | rank3 masked array |x n_images x ny x nx
+        lons | rank 1 array | lons of each pixel in the image.  
+        lats | rank 1 array | lats of each pixel in theimage
+        layer_name_prefix | string | Can be used to set the name of the layes in the kmz (nb of the form layer_name_prefix_001 etc. )
+        kmz_filename | string | Sets the name of the kmz produced
+    Returns:
+        kmz file
+    History:
+        2020/06/10 | MEG | Written
+    """
+    import numpy as np
+    import os
+    import shutil
+    import simplekml
+    from small_plot_functions import r2_array_to_png
+
+    n_images = images_r3_ma.shape[0]    
+    # 0 temporary folder for intermediate pngs
+    try:
+        os.mkdir('./temp_kml')                                                                       # make a temporay folder to save pngs
+    except:
+        print("Can't create a folder for temporary kmls.  Trying to delete 'temp_kml' incase it exisits already... ", end = "")
+        try:
+            shutil.rmtree('./temp_kml')                                                              # try to remove folder
+            os.mkdir('./temp_kml')                                                                       # make a temporay folder to save pngs
+            print("Done. ")
+        except:
+          raise Exception("Problem making a temporary directory to store intermediate pngs" )
+
+    # 1: Initiate the kml
+    kml = simplekml.Kml()
+        
+    # 2 Begin to loop through each iamge
+    for n_image in np.arange(n_images)[::-1]:                                           # Reverse so that first IC is processed last and appears as visible
+        layer_name = f"{layer_name_prefix}_{str(n_image).zfill(3)}"                     # get the name of a layer a sttring
+        r2_array_to_png(images_r3_ma[n_image,], layer_name, './temp_kml/')              # save as an intermediate .png
+        
+        ground = kml.newgroundoverlay(name= layer_name)                                 # add the overlay to the kml file
+        ground.icon.href = f"./temp_kml/{layer_name}.png"                               # and the actual image part
+    
+        ground.gxlatlonquad.coords = [(lons[0], lats[0]), (lons[-1],lats[0]),           # lon, lat of image south west, south east
+                                      (lons[-1], lats[-1]), (lons[0],lats[-1])]         # north east, north west  - order is anticlockwise around the square, startign in the lower left
+       
+    #3: Tidy up at the end
+    kml.savekmz(f"{kmz_filename}.kmz", format=False)                                    # Saving as KMZ
+    shutil.rmtree('./temp_kml')    
