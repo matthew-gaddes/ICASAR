@@ -12,3 +12,8 @@ The algorithm also provides tools to visualise the recovered sources in order fo
 
 ![figure_4](https://user-images.githubusercontent.com/10498635/75799539-206dab80-5d70-11ea-9ebe-5ebdd5cf94af.png)
 
+# June 2020 addition:
+
+If longitude and latitude information for the interferograms is available, the independent components that are found can be geocoded and displayed in Google Earth:
+![ge_print](https://user-images.githubusercontent.com/10498635/84274640-02aaa200-ab28-11ea-80e1-ed5e21f26528.jpg)
+
