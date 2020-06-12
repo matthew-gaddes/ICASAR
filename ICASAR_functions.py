@@ -11,6 +11,14 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
            ica_param = (1e-4, 150), tsne_param = (30,12), hdbscan_param = (35,10),
            lons = None, lats = None, ge_kmz = True, out_folder = './ICASAR_results/'):
     """
+    Perform ICASAR, which is a robust way of applying sICA to data.  As PCA is also performed as part of this,
+    the sources and time courses found by PCA are also returned.  
+    
+    A note on reference areas/pixels:
+        ICASAR requires each interferogram to be mean centered (ie the mean of all the pixels for a single interferogram is 0).  
+        Therefore, when the time series is reconstructed using the result of ICASAR (i.e. tcs * sources), these will produce 
+        the mean centered time series.  If you wish to work 
+    
     Inputs:
         phUnw | rank 2 array | ifgs as rows
         mask | rank 2 boolean | mask to convert the ifgs as rows into rank 2 masked arrays.  Used for figure outputs.  
@@ -24,7 +32,7 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
         lons | rank 1 array | lons of each pixel in phUnw
         lats | rank 1 array | lats of each pixel in phUnw
         ge_kmz | Boolean | If Ture and lons and lats are provided, a .kmz of the ICs is produced for viewing in GoogleEarth
-        out_folder | string | if desired, can set the name of the folder results are saved to
+       out_folder | string | if desired, can set the name of the folder results are saved to
 
     Outputs:
         S_best | rank 2 array | the recovered sources as row vectors (e.g. 5 x 12,300)
@@ -35,6 +43,8 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
         S_all_info | dictionary| useful for custom plotting. Sources: all the sources in a rank 3 array (e.g. 500x500 x1200 for 6 sources recovered 200 times)
                                                             labels: label for each soure
                                                             xy: x and y coordinats for 2d representaion of all sources
+        phUnw_mean | r2 array | the mean for each interfeorram.  subtract from (tcs * sources) to get back original ifgs.  
+        
     History:
         2018/06/?? | MEG | Written
         2019/11/?? | MEG | Rewrite to be more robust and readable
@@ -86,8 +96,8 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
     min_cluster_size = hdbscan_param[0]                                              
     min_samples = hdbscan_param[1] 
     
-    
-    phUnwMC = phUnw - np.mean(phUnw, axis = 1)[:,np.newaxis]                                        # mean centre the data (along rows)
+    phUnw_mean = np.mean(phUnw, axis = 1)[:,np.newaxis]                                         # get the mean for each ifg (ie along rows.  )
+    phUnwMC = phUnw - phUnw_mean                                                           # mean centre the data (along rows)
     n_ifgs = np.size(phUnwMC, axis = 0)     
        
     # 1: do sPCA once
@@ -222,7 +232,7 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
     print("Done!")
 
     
-    return S_best,  tcs, source_residuals, Iq_sorted, n_clusters, S_all_info
+    return S_best,  tcs, source_residuals, Iq_sorted, n_clusters, S_all_info, phUnw_mean
         
 #%%
 
