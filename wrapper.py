@@ -23,7 +23,7 @@ ICASAR_settings = {"n_comp" : 5,                                    # number of 
                     "bootstrapping_param" : (200, 000),               # (number of runs with bootstrapping, number of runs without bootstrapping)                    "hdbscan_param" : (35, 10),                        # (min_cluster_size, min_samples)
                     "tsne_param" : (30, 12),                        # (perplexity, early_exaggeration)
                     "ica_param" : (1e-2, 150),                      # (tolerance, max iterations)
-                    "ge_kmz"    :  True,
+                    "ge_kmz"    :  True,                            # make a google earth .kmz of the ICs
                     "figures" : "png+window"}                       # if png, saved in a folder as .png.  If window, open as interactive matplotlib figures,
                                                                     # if 'png+window', both.  
                                                                     # default is "window" as 03_clustering_and_manifold is interactive.  

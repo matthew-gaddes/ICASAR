@@ -338,10 +338,11 @@ def r2_to_r3(ifgs_r2, mask):
     return ifgs_r3_ma
 
 
-#%% Taken from small_plot_functions.py
+#%% Copied from small_plot_functions.py
 
 
-def r2_arrays_to_googleEarth(images_r3_ma, lons, lats, layer_name_prefix = 'layer', kmz_filename = 'ICs'):
+def r2_arrays_to_googleEarth(images_r3_ma, lons, lats, layer_name_prefix = 'layer', kmz_filename = 'ICs',
+                             out_folder = './'):
     """ Given one or several arrays in a rank3 array, create a multilayer Google Earth file (.kmz) of them.  
     Inputs:
         images_r3_ma | rank3 masked array |x n_images x ny x nx
@@ -349,16 +350,18 @@ def r2_arrays_to_googleEarth(images_r3_ma, lons, lats, layer_name_prefix = 'laye
         lats | rank 1 array | lats of each pixel in theimage
         layer_name_prefix | string | Can be used to set the name of the layes in the kmz (nb of the form layer_name_prefix_001 etc. )
         kmz_filename | string | Sets the name of the kmz produced
+        out_folder | string | path to location to save .kmz.  Should have a trailing /
     Returns:
         kmz file
     History:
         2020/06/10 | MEG | Written
+        2020/06
     """
     import numpy as np
     import os
     import shutil
     import simplekml
-    from small_plot_functions import r2_array_to_png
+   
 
     n_images = images_r3_ma.shape[0]    
     # 0 temporary folder for intermediate pngs
@@ -388,5 +391,35 @@ def r2_arrays_to_googleEarth(images_r3_ma, lons, lats, layer_name_prefix = 'laye
                                       (lons[-1], lats[-1]), (lons[0],lats[-1])]         # north east, north west  - order is anticlockwise around the square, startign in the lower left
        
     #3: Tidy up at the end
-    kml.savekmz(f"{kmz_filename}.kmz", format=False)                                    # Saving as KMZ
+    kml.savekmz(f"{out_folder}{kmz_filename}.kmz", format=False)                                    # Saving as KMZ
     shutil.rmtree('./temp_kml')    
+
+
+#%% Copied from small_plot_functions.py
+
+def r2_array_to_png(r2, filename, png_folder = './'):    
+    """ Given a rank 2 array/image, save it as a png with no borders.  
+    If a masked array is used, transparency for masked areas is conserved.  
+    Designed for use with Google Earth overlays.  
+    
+    Inputs:
+        r2 | rank 2 array | image / array to be saved
+        filename | string | name of .png
+        png_folder | string | folder to save in, end with /  e.g. ./kml_outputs/
+    Returns:
+        png of figure
+    History:
+        2020/06/10 | MEG | Written
+        
+    """
+    import matplotlib.pyplot as plt
+    
+    f, ax = plt.subplots(1,1)
+    ax.imshow(r2)
+    plt.gca().set_axis_off()
+    plt.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, hspace = 0, wspace = 0)
+    plt.margins(0,0)
+    plt.gca().xaxis.set_major_locator(plt.NullLocator())
+    plt.gca().yaxis.set_major_locator(plt.NullLocator())
+    plt.savefig(f"{png_folder}{filename}.png", bbox_inches = 'tight',pad_inches = 0, transparent = True)
+    plt.close()

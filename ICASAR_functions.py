@@ -9,7 +9,7 @@ Created on Tue May 29 11:23:10 2018
 
 def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter_zoom = 0.2, 
            ica_param = (1e-4, 150), tsne_param = (30,12), hdbscan_param = (35,10),
-           lons = None, lats = None, ge_kmz = True):
+           lons = None, lats = None, ge_kmz = True, out_folder = './ICASAR_results/'):
     """
     Inputs:
         phUnw | rank 2 array | ifgs as rows
@@ -24,9 +24,8 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
         lons | rank 1 array | lons of each pixel in phUnw
         lats | rank 1 array | lats of each pixel in phUnw
         ge_kmz | Boolean | If Ture and lons and lats are provided, a .kmz of the ICs is produced for viewing in GoogleEarth
-        
-        
-    
+        out_folder | string | if desired, can set the name of the folder results are saved to
+
     Outputs:
         S_best | rank 2 array | the recovered sources as row vectors (e.g. 5 x 12,300)
         tcs    | rank 2 array | the time courses for the recoered sources (e.g. 17 x 5)
@@ -41,6 +40,7 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
         2019/11/?? | MEG | Rewrite to be more robust and readable
         2020/06/03 | MEG | Update figure outputs.  
         2020/06/09 | MEG | Add a raise Exception so that data cannot have nans in it.  
+        2020/06/12 | MEG | Add option to name outfolder where things are saved, and save results there as a pickle.  
         
     """
     # external functions
@@ -50,8 +50,9 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
     from sklearn.manifold import TSNE                                            # t-distributed stochastic neighbour embedding
     import shutil                                                                # used to make/remove folders etc
     import os                                                                    # ditto
+    import pickle                                                                # to save outputs.  
     # internal functions    
-    from blind_signal_separation_funcitons import fastica_MEG, PCA_meg2
+    from blind_signal_separation_funcitons import PCA_meg2
     from auxiliary_functions import  pca_variance_line, maps_tcs_rescale
     from auxiliary_functions import component_plot, bss_components_inversion
     from auxiliary_functions import r2_to_r3, r2_arrays_to_googleEarth
@@ -68,7 +69,7 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
     else:
         pass
     if figures == "png" or figures == "png+window":                                                         # if figures will be png, make 
-        fig_kwargs['png_path'] = "./ICASAR_outputs"                                                          # this will be passed to various figure plotting functions
+        fig_kwargs['png_path'] = out_folder                                                                  # this will be passed to various figure plotting functions
         try:
             shutil.rmtree(fig_kwargs['png_path'])                                                              # try to remove folder
         except:
@@ -203,12 +204,23 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
     if ge_kmz and (lons is not None) and (lats is not None):
         print('Creating a Google Earth .kmz of the geocoded independent components... ', end = '')
         S_best_r3 = r2_to_r3(S_best, mask)
-        r2_arrays_to_googleEarth(S_best_r3, lons, lats, 'IC')
+        r2_arrays_to_googleEarth(S_best_r3, lons, lats, 'IC', out_folder = out_folder)
         print('Done!')
         
     S_all_info = {'sources' : S_hist_r3,                                                                # package into a dict to return
                   'labels' : labels_hdbscan,
                   'xy' : xy_tsne       }
+    
+    # Save the results: 
+    print('Saving the key results as a .pkl file... ', end = '')                                            # note that we don't save S_all_info as it's a huge file.  
+    with open(f'{out_folder}ICASAR_results.pkl', 'wb') as f:
+        pickle.dump(S_best, f)
+        pickle.dump(tcs, f)
+        pickle.dump(source_residuals, f)
+        pickle.dump(Iq_sorted, f)
+        pickle.dump(n_clusters, f)
+    print("Done!")
+
     
     return S_best,  tcs, source_residuals, Iq_sorted, n_clusters, S_all_info
         
@@ -461,12 +473,12 @@ def plot_cluster_results(labels = None, D = None, interactive = False, images_r3
             im.set_data(images_r3[ind,:,:])                           # set the image corresponding to that point
         
         elif line_no_BS.contains(event)[0]:                             # False if cursor isn't over point, True if is
-            ind = line_no_BS.contains(event)[1]["ind"]               # find out the index within the array from the event
-            if np.size(ind) == 1:                               # if only hovering over one point, convert from array to integer
-                ind =  n_BS + ind[0]                                    # array to integer conversion
-            else:                                               # if hovering over multiple points, pick one to show
-                index = np.random.randint(0, np.size(ind), 1)   # of the multiple points, pick one to show at random
-                ind = ind[index]                                # index of random point
+            ind = line_no_BS.contains(event)[1]["ind"]                   # find out the index within the array from the event
+            if np.size(ind) == 1:                                        # if only hovering over one point, convert from array to integer
+                ind =  n_BS + ind[0]                                     # array to integer conversion
+            else:                                                        # if hovering over multiple points, pick one to show
+                index = np.random.randint(0, np.size(ind), 1)            # of the multiple points, pick one to show at random
+                ind = ind[index]                                         # index of random point
                 ind = n_BS + ind[0]                                    # array to integer conversion
             #print(f'Displaying source {ind}.')
             w,h = fig.get_size_inches()*fig.dpi                 # get the figure size
