@@ -90,7 +90,7 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
         print("Failed!")                                                                                # 
     try:
         print("Trying to create a new outputs folder... ", end = '')                                    # try to make a new folder
-        os.mkdir(fig_kwargs['png_path'])                                                                       
+        os.mkdir(out_folder)                                                                       
         print('Done!')
     except:
         print("Failed!")                                                                                          
