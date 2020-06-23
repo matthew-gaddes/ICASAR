@@ -32,7 +32,7 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
         lons | rank 1 array | lons of each pixel in phUnw
         lats | rank 1 array | lats of each pixel in phUnw
         ge_kmz | Boolean | If Ture and lons and lats are provided, a .kmz of the ICs is produced for viewing in GoogleEarth
-       out_folder | string | if desired, can set the name of the folder results are saved to
+        out_folder | string | if desired, can set the name of the folder results are saved to
 
     Outputs:
         S_best | rank 2 array | the recovered sources as row vectors (e.g. 5 x 12,300)
@@ -72,22 +72,29 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
         raise Exception("Unable to proceed as the data ('phUnw') contains Nans.  ")
     
     
-    # sort out various things for figures
+    # sort out various things for figures, and check input is of the correct form
     fig_kwargs = {"figures" : figures}
-    if figures not in ["window", "png", "png+window", "none"]:                                                            # check figure input is correct
-        raise ValueError("'figures' should be 'window', 'png', 'png+window', or 'None'.  Exiting...")
-    else:
-        pass
     if figures == "png" or figures == "png+window":                                                         # if figures will be png, make 
         fig_kwargs['png_path'] = out_folder                                                                  # this will be passed to various figure plotting functions
-        try:
-            shutil.rmtree(fig_kwargs['png_path'])                                                              # try to remove folder
-        except:
-            pass                                                                                            # but if can't, assume it's not there so can't be deleted
-        os.mkdir(fig_kwargs['png_path'])                                                                       # make folder for output
+    elif figures == 'window' or figures == 'none':
+        pass
     else:
-        folder_ICASAR_outputs = None
-      
+        raise ValueError("'figures' should be 'window', 'png', 'png+window', or 'None'.  Exiting...")
+        
+    # create a folder that will be used for outputs
+    try:
+        print("Trying to remove the existing outputs folder... ", end = '')
+        shutil.rmtree(out_folder)                                                                       # try to remove folder
+        print('Done!')
+    except:
+        print("Failed!")                                                                                # 
+    try:
+        print("Trying to create a new outputs folder... ", end = '')                                    # try to make a new folder
+        os.mkdir(fig_kwargs['png_path'])                                                                       
+        print('Done!')
+    except:
+        print("Failed!")                                                                                          
+
     
     n_converge_bootstrapping = bootstrapping_param[0]                 # unpack input tuples
     n_converge_no_bootstrapping = bootstrapping_param[1]
@@ -180,10 +187,14 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
 
     
     # 6: Determine the number of clusters
-    if np.min(labels_hdbscan) == (-1):                                      # if we have noise, 
+    if np.min(labels_hdbscan) == (-1):                                      # if we have noise (which is labelled as -1 byt HDBSCAN), 
         n_clusters = np.size(np.unique(labels_hdbscan)) - 1                 # noise doesn't count as a cluster so we -1 from number of clusters
     else:
         n_clusters = np.size(np.unique(labels_hdbscan))                     # but if no noise, number of clusters is just number of different labels
+        
+    if n_clusters == 0:
+        raise Exception("No clusters have been found.  Often, this is caused by running the FastICA algorithm too few times, or setting"
+                        "the hdbscan_param 'min_cluster_size' too low.  Exiting...")
         
         
     # 7:  Centrotypes (object that is most similar to all others in the cluster)
