@@ -9,7 +9,8 @@ Created on Tue May 29 11:23:10 2018
 
 def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter_zoom = 0.2, 
            ica_param = (1e-4, 150), tsne_param = (30,12), hdbscan_param = (35,10),
-           lons = None, lats = None, ge_kmz = True, out_folder = './ICASAR_results/'):
+           lons = None, lats = None, ge_kmz = True, out_folder = './ICASAR_results/',
+           ica_verbose = 'long'):
     """
     Perform ICASAR, which is a robust way of applying sICA to data.  As PCA is also performed as part of this,
     the sources and time courses found by PCA are also returned.  
@@ -33,9 +34,11 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
         lats | rank 1 array | lats of each pixel in phUnw
         ge_kmz | Boolean | If Ture and lons and lats are provided, a .kmz of the ICs is produced for viewing in GoogleEarth
         out_folder | string | if desired, can set the name of the folder results are saved to
+        ica_verbose | 'long' or 'short' | if long, full details of ICA runs are given.  If short, only the overall progress 
 
     Outputs:
         S_best | rank 2 array | the recovered sources as row vectors (e.g. 5 x 12,300)
+        mask | rank 2 boolean | Same as inputs, but useful to save.  mask to convert the ifgs as rows into rank 2 masked arrays.  Used for figure outputs, an
         tcs    | rank 2 array | the time courses for the recoered sources (e.g. 17 x 5)
         source_residuals    | ? | the residual when each input mixture is reconstructed using the sources and time courses 
         Iq_sorted              | ?|     the cluster quality index for each centrotype
@@ -51,6 +54,7 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
         2020/06/03 | MEG | Update figure outputs.  
         2020/06/09 | MEG | Add a raise Exception so that data cannot have nans in it.  
         2020/06/12 | MEG | Add option to name outfolder where things are saved, and save results there as a pickle.  
+        2020/06/24 | MEG | Add the ica_verbose option so that ICASAR can be run without generating too many terminal outputs.  
         
     """
     # external functions
@@ -80,6 +84,16 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
         pass
     else:
         raise ValueError("'figures' should be 'window', 'png', 'png+window', or 'None'.  Exiting...")
+        
+    if ica_verbose == 'long':
+        fastica_verbose = True
+    elif ica_verbose == 'short':
+        fastica_verbose = False
+    else:
+        print(f"'ica_verbose should be either 'long' or 'short'.  Setting to 'short' and continuing.  ")
+        ica_verbose = 'short'
+        fastica_verbose = False
+        
         
     # create a folder that will be used for outputs
     try:
@@ -124,24 +138,32 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
     S_hist_BS = []
     n_ica_converge = 0
     n_ica_fail = 0
+    if ica_verbose == 'short' and n_converge_bootstrapping > 0:                                 # if we're only doing short version of verbose, and will be doing bootstrapping
+        print(f"FastICA progress with bootstrapping: ", end = '')
     while n_ica_converge < n_converge_bootstrapping:
-        S, A, ica_converged = bootstrap_ICA(phUnwMC, n_comp, bootstrap = True, ica_param = ica_param)
+
+        S, A, ica_converged = bootstrap_ICA(phUnwMC, n_comp, bootstrap = True, ica_param = ica_param, verbose = fastica_verbose)
         if ica_converged:
             n_ica_converge += 1
             A_hist_BS.append(A)                                     # record results
             S_hist_BS.append(S)                                     # record results
         else:
             n_ica_fail += 1
-        print(f"sICA with bootstrapping has converged {n_ica_converge} of {n_converge_bootstrapping} times.   \n")
+        if ica_verbose == 'long':
+            print(f"sICA with bootstrapping has converged {n_ica_converge} of {n_converge_bootstrapping} times.   \n")
+        else:
+            print(f"{int(100*(n_ica_converge/n_converge_bootstrapping))}% ", end = '')
 
     #     and without bootstrapping
-    A_hist_no_BS = []                                                                                   # initiate to store time courses without bootstrapping
-    S_hist_no_BS = []                                                                                   # and recovered sources        
-    n_ica_converge = 0                          # reset the counters for the second lot of ica
+    A_hist_no_BS = []                                                                        # initiate to store time courses without bootstrapping
+    S_hist_no_BS = []                                                                        # and recovered sources        
+    n_ica_converge = 0                                                                       # reset the counters for the second lot of ica
     n_ica_fail = 0
+    if ica_verbose == 'short' and n_converge_no_bootstrapping > 0:                           # if we're only doing short version of verbose, and are actually doing ICA with no bootstrapping
+        print(f"FastICA progress without bootstrapping: ", end = '')
     while n_ica_converge < n_converge_no_bootstrapping:
         S, A, ica_converged = bootstrap_ICA(phUnwMC, n_comp, bootstrap = False, ica_param = ica_param,
-                                            X_whitened = x_white, dewhiten_matrix = PC_whiten_mat)
+                                            X_whitened = x_white, dewhiten_matrix = PC_whiten_mat, verbose = fastica_verbose)
         
         if ica_converged:
             n_ica_converge += 1
@@ -149,12 +171,17 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
             S_hist_no_BS.append(S)                                     # record results
         else:
             n_ica_fail += 1
-        print(f"sICA without bootstrapping has converged {n_ica_converge} of {n_converge_no_bootstrapping} times.   \n",)
+        if ica_verbose == 'long':
+            print(f"sICA without bootstrapping has converged {n_ica_converge} of {n_converge_no_bootstrapping} times.   \n",)
+        else:
+            print(f"{int(100*(n_ica_converge/n_converge_no_bootstrapping))}% ", end = '')
+            
+        
        
     # 3: change data structure for sources, and compute similarities and distances between them.  
     A_hist = A_hist_BS + A_hist_no_BS
     S_hist = S_hist_BS + S_hist_no_BS
-    print('Starting to compute the pairwise distance matrices....', end = '')
+    print('\n Starting to compute the pairwise distance matrices....', end = '')
     S_hist_r2, S_hist_r3 = sources_list_to_r2_r3(S_hist, mask)                          # combine both bootstrapped and non-bootstrapped.  
     D, S = pairwise_comparison(S_hist_r2)
     print('Done!')
@@ -236,6 +263,7 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
     print('Saving the key results as a .pkl file... ', end = '')                                            # note that we don't save S_all_info as it's a huge file.  
     with open(f'{out_folder}ICASAR_results.pkl', 'wb') as f:
         pickle.dump(S_best, f)
+        pickle.dump(mask, f)
         pickle.dump(tcs, f)
         pickle.dump(source_residuals, f)
         pickle.dump(Iq_sorted, f)
@@ -243,12 +271,12 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
     print("Done!")
 
     
-    return S_best,  tcs, source_residuals, Iq_sorted, n_clusters, S_all_info, phUnw_mean
+    return S_best, mask, tcs, source_residuals, Iq_sorted, n_clusters, S_all_info, phUnw_mean
         
 #%%
 
 def bootstrap_ICA(X, n_comp, bootstrap = True, ica_param = (1e-4, 150), 
-                  X_whitened = None, dewhiten_matrix = None):
+                  X_whitened = None, dewhiten_matrix = None, verbose = True):
     """  A function to perform ICA either with or without boostrapping.  
     If not performing bootstrapping, performance can be imporoved by passing the whitened data and the dewhitening matrix
     (so that PCA does not have to be peroformed).  
@@ -265,6 +293,7 @@ def bootstrap_ICA(X, n_comp, bootstrap = True, ica_param = (1e-4, 150),
                                         X_white = A x S
                                         X = dewhiten x A x S
                                         Needed if not bootstrapping and don't want to  do PCA each time (as above)
+        verbose | boolean | If True, the FastICA algorithm returns how many times it took to converge (or if it didn't converge)
     
     Returns:
         S | rank2 array | sources as row vectors (ie n_sources x n_samples)
@@ -295,7 +324,6 @@ def bootstrap_ICA(X, n_comp, bootstrap = True, ica_param = (1e-4, 150),
                             f' a bootsrapped sample.  ')                                                             # error message
         X = X[input_ifg_args, :]                                                                              # bootstrapped smaple
     else:                                                                                                           # if we're not bootstrapping, need to work out if we actually need to do PCA
-        # import ipdb; ipdb.set_trace()
         if X_whitened is not None and dewhiten_matrix is not None:
             pca_needed = False
         else:
@@ -317,7 +345,7 @@ def bootstrap_ICA(X, n_comp, bootstrap = True, ica_param = (1e-4, 150),
     if pca_success:                                                                                         # If PCA was a success, do ICA (note, if not neeed, success is set to True)
         X_whitened = X_whitened[:n_comp,]                                                                     # reduce dimensionality
         W, S, A_white, _, _, ica_success = fastica_MEG(X_whitened, n_comp=n_comp,  algorithm="parallel",        
-                                                   whiten=False, maxit=ica_param[1], tol = ica_param[0])          # do ICA
+                                                   whiten=False, maxit=ica_param[1], tol = ica_param[0], verbose = verbose)          # do ICA
         A = dewhiten_matrix[:,0:n_comp] @ A_white                                         # turn ICA mixing matrix back into a time courses (ie dewhiten)
         S, A = maps_tcs_rescale(S, A)                                                     # rescale so spatial maps have a range or 1 (so easy to compare)
         return S, A, ica_success
