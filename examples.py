@@ -20,7 +20,7 @@ from auxiliary_functions import col_to_ma, r2_to_r3
 #%% Things to set
 
 ICASAR_settings = {"n_comp" : 5,                                    # number of components to recover with ICA (ie the number of PCA sources to keep)
-                    "bootstrapping_param" : (200, 000),               # (number of runs with bootstrapping, number of runs without bootstrapping)                    "hdbscan_param" : (35, 10),                        # (min_cluster_size, min_samples)
+                    "bootstrapping_param" : (20, 20),               # (number of runs with bootstrapping, number of runs without bootstrapping)                    "hdbscan_param" : (35, 10),                        # (min_cluster_size, min_samples)
                     "tsne_param" : (30, 12),                        # (perplexity, early_exaggeration)
                     "ica_param" : (1e-2, 150),                      # (tolerance, max iterations)
                     "hdbscan_param" : (35,10),                      # (min_cluster_size, min_samples) Discussed in more detail in Mcinnes et al. (2017). min_cluster_size sets the smallest collection of points that can be considered a cluster. min_samples sets how conservative the clustering is. With larger values, more points will be considered noise. 
@@ -72,7 +72,7 @@ fig3.canvas.set_window_title("Interferograms as row vectors and a mask")
 
 #%% do ICA with ICSAR function
  
-S_best, pixel_mask, time_courses, x_train_residual_ts, Iq, n_clusters, S_all_info, phUnw_mean  = ICASAR(phUnw, pixel_mask, lons=lons, lats=lats, **ICASAR_settings) 
+S_best, pixel_mask, time_courses, x_train_residual_ts, Iq, n_clusters, S_all_info, phUnw_mean  = ICASAR(phUnw, mask = pixel_mask, lons=lons, lats=lats, **ICASAR_settings) 
       
 
 #%% We can reconstruct the data using the sources and timecourses, but don't forget that ICA returns mean centered sources 
@@ -96,3 +96,9 @@ fig4.colorbar(im2, ax = axes[2])
 
 fig4.canvas.set_window_title("Reconstructed Data")
 
+
+#%% Note that the amount of bootstrapping done by ICASAR can also be controlled, and seen in the clustering and 2d manifold plot:
+    
+ICASAR_settings["bootstrapping_param"] = (100, 200)               # (number of runs with bootstrapping, number of runs without bootstrapping)                  
+                   
+S_best, pixel_mask, time_courses, x_train_residual_ts, Iq, n_clusters, S_all_info, phUnw_mean  = ICASAR(phUnw, mask = pixel_mask, lons=lons, lats=lats, **ICASAR_settings) 

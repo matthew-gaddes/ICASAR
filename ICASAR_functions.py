@@ -7,13 +7,14 @@ Created on Tue May 29 11:23:10 2018
 
 
 
-def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter_zoom = 0.2, 
+def ICASAR(phUnw, bootstrapping_param, n_comp, mask = None, figures = "window", scatter_zoom = 0.2, 
            ica_param = (1e-4, 150), tsne_param = (30,12), hdbscan_param = (35,10),
            lons = None, lats = None, ge_kmz = True, out_folder = './ICASAR_results/',
-           ica_verbose = 'long'):
+           ica_verbose = 'long', two_d = True):
     """
     Perform ICASAR, which is a robust way of applying sICA to data.  As PCA is also performed as part of this,
-    the sources and time courses found by PCA are also returned.  
+    the sources and time courses found by PCA are also returned.  Note that this can be run with eitehr 1d data (e.g. time series for a GPS station),
+    or on 2d data (e.g. a time series of interferograms) by providing a 'mask', that is used to convert 1d row vectors to 2d masked arrays.  
     
     A note on reference areas/pixels:
         ICASAR requires each interferogram to be mean centered (ie the mean of all the pixels for a single interferogram is 0).  
@@ -22,9 +23,10 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
     
     Inputs:
         phUnw | rank 2 array | ifgs as rows
-        mask | rank 2 boolean | mask to convert the ifgs as rows into rank 2 masked arrays.  Used for figure outputs.  
         bootstrapping_param | tuple | (number of ICA runs with bootstrap, number of ICA runs without bootstrapping )  e.g. (100,10)
         n_comp | int | Number of ocmponents that are retained from PCA and used as the input for ICA.  
+        mask | rank 2 boolean  or None | If None, data are assumed to be 1d (row vectors).  
+                                         If a rank 2 array, used to convert 1d row vectors into 2d masked arrays.  
         figures | string,  "window" / "png" / "none" / "png+window" | controls if figures are produced, not none is the strin none, not the NoneType None
         scatter_zoom | float | Sets the size of the popup previews in the 2d clusters_by_max_Iq_no_noise figure.  
         ica_param | tuple | Used to control ICA, (ica_tol, ica_maxit)
@@ -37,7 +39,7 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
         ica_verbose | 'long' or 'short' | if long, full details of ICA runs are given.  If short, only the overall progress 
 
     Outputs:
-        S_best | rank 2 array | the recovered sources as row vectors (e.g. 5 x 12,300)
+        S_best | rank 2 array | the recovered sources as row vectors (e.g. 5 x 1230)
         mask | rank 2 boolean | Same as inputs, but useful to save.  mask to convert the ifgs as rows into rank 2 masked arrays.  Used for figure outputs, an
         tcs    | rank 2 array | the time courses for the recoered sources (e.g. 17 x 5)
         source_residuals    | ? | the residual when each input mixture is reconstructed using the sources and time courses 
@@ -55,13 +57,22 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
         2020/06/09 | MEG | Add a raise Exception so that data cannot have nans in it.  
         2020/06/12 | MEG | Add option to name outfolder where things are saved, and save results there as a pickle.  
         2020/06/24 | MEG | Add the ica_verbose option so that ICASAR can be run without generating too many terminal outputs.  
-        
+    Stack overview:
+        PCA_meg2
+        maps_tcs_rescale                                (rescale spatial maps so they have the same range, then rescale time courses so no change.  makes comparison easier.  )
+        pca_variance_line
+        component_plot                                  with PCA sources
+        bootstrap_ICA                                   with bootstrapping
+        bootstrap_ICA                                   and without bootstrapping
+        bootstrapped_sources_to_centrotypes             # run HDBSCAN (clustering), TSNE (2d manifold) and make figure showing this.  Choose source most representative of each cluster (centrotype).  
+            plot_cluster_results                        # interactive figure showing clustering and 2d manifold representaiton.  
+        bss_components_inversion                        # inversion to get time coures for each centrotype.  
+        component_plot                                  # with ICASAR sources
+        r2_arrays_to_googleEarth                        # geocode spatial sources and make a .kmz for use with Google Earth.  
     """
     # external functions
     import numpy as np
     import matplotlib.pyplot as plt
-    import hdbscan                                                               # used for clustering
-    from sklearn.manifold import TSNE                                            # t-distributed stochastic neighbour embedding
     import shutil                                                                # used to make/remove folders etc
     import os                                                                    # ditto
     import pickle                                                                # to save outputs.  
@@ -74,6 +85,13 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
     # Check if the data are suitable
     if np.max(np.isnan(phUnw)):
         raise Exception("Unable to proceed as the data ('phUnw') contains Nans.  ")
+    
+    if mask is None:                                                                                                    # check the shape of the data.  
+        print("No mask supplied so assuming that data are 1d (e.g. a GPS time series).  ")
+        two_d = False
+    else:
+        print('A mask has been supplied to assuming that the data are 2d (e.g. a time series of interferograms).  ')
+        two_d = True
     
     
     # sort out various things for figures, and check input is of the correct form
@@ -112,10 +130,6 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
     
     n_converge_bootstrapping = bootstrapping_param[0]                 # unpack input tuples
     n_converge_no_bootstrapping = bootstrapping_param[1]
-    perplexity = tsne_param[0]                              
-    early_exaggeration = tsne_param[1]
-    min_cluster_size = hdbscan_param[0]                                              
-    min_samples = hdbscan_param[1] 
     
     phUnw_mean = np.mean(phUnw, axis = 1)[:,np.newaxis]                                         # get the mean for each ifg (ie along rows.  )
     phUnwMC = phUnw - phUnw_mean                                                           # mean centre the data (along rows)
@@ -128,7 +142,16 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
        
     if fig_kwargs['figures'] != "none":
         pca_variance_line(PC_vals, title = '01_PCA_variance_line', **fig_kwargs)
-        component_plot(x_decorrelate_rs.T, mask, PC_vecs_rs.T, mask.shape, title = '02_PCA_sources_and_tcs', shared = 1, **fig_kwargs)
+        if two_d:
+            component_plot(x_decorrelate_rs.T, mask, PC_vecs_rs.T, mask.shape, title = '02_PCA_sources_and_tcs', shared = 1, **fig_kwargs)
+        else:
+            f, axes = plt.subplots(5,1, figsize = (8,16))
+            title = '02_sources_recovered_by_PCA'
+            f.canvas.set_window_title(title)
+            f.suptitle(title)
+            time_values = np.arange(0,x_decorrelate.shape[1])
+            for x_n, ax in enumerate(axes):
+                ax.plot(time_values, x_decorrelate[x_n,])
     print('Done!')
    
   
@@ -150,9 +173,9 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
         else:
             n_ica_fail += 1
         if ica_verbose == 'long':
-            print(f"sICA with bootstrapping has converged {n_ica_converge} of {n_converge_bootstrapping} times.   \n")
+            print(f"sICA with bootstrapping has converged {n_ica_converge} of {n_converge_bootstrapping} times.   \n")              # longer (more info) update to terminal
         else:
-            print(f"{int(100*(n_ica_converge/n_converge_bootstrapping))}% ", end = '')
+            print(f"{int(100*(n_ica_converge/n_converge_bootstrapping))}% ", end = '')                                              # short update to terminal
 
     #     and without bootstrapping
     A_hist_no_BS = []                                                                        # initiate to store time courses without bootstrapping
@@ -179,63 +202,20 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
         
        
     # 3: change data structure for sources, and compute similarities and distances between them.  
-    A_hist = A_hist_BS + A_hist_no_BS
-    S_hist = S_hist_BS + S_hist_no_BS
-    print('\n Starting to compute the pairwise distance matrices....', end = '')
-    S_hist_r2, S_hist_r3 = sources_list_to_r2_r3(S_hist, mask)                          # combine both bootstrapped and non-bootstrapped.  
-    D, S = pairwise_comparison(S_hist_r2)
-    print('Done!')
+    #A_hist = A_hist_BS + A_hist_no_BS                                                                   # list containing the time courses from each run.  i.e. each is: times x n_components
+    S_hist = S_hist_BS + S_hist_no_BS                                                                   # list containing the soures from each run.  i.e.: each os n_components x n_pixels
+    sources_all_r2, sources_all_r3 = sources_list_to_r2_r3(S_hist, mask)                                # conver to more useful format.  r2 one is (n_components x n_runs) x n_pixels, r3 one is (n_components x n_runs) x ny x nx
+                        
+       
+    # 4: Do clustering and 2d manifold representation, plus get centrotypes of clusters.  
+    S_best, labels_hdbscan, xy_tsne, clusters_by_max_Iq_no_noise, Iq  = bootstrapped_sources_to_centrotypes(sources_all_r2, sources_all_r3,
+                                                                                                            hdbscan_param, tsne_param, 
+                                                                                                            (n_converge_bootstrapping, n_comp), **fig_kwargs)
+                                                                                                            
+    Iq_sorted = np.sort(Iq)[::-1]               
+    n_clusters = S_best.shape[0]                                                                # the number of sources/centrotypes is equal to the number of clusters    
     
-
-    #  4: Clustering with all the recovered sources   
-    print('Starting to cluster the sources using HDBSCAN....', end = "")  
-    clusterer_precom = hdbscan.HDBSCAN(metric = 'precomputed', min_cluster_size = min_cluster_size, 
-                                       min_samples = min_samples, cluster_selection_method = 'leaf')
-    labels_hdbscan = clusterer_precom.fit_predict(D)                                                                  # D is n_samples x n_samples, then returns a rank 1 which is the cluster number (ie label) for each source
-    Iq = cluster_quality_index(labels_hdbscan, S)                                                                     # calculate the cluster quality index, using S (n_samples x n_samples), and the label for each one
-                                                                                                                      # note that Iq is ordered by cluster, so the first value is the cluster quality index for 1st cluster (which is usually labelled -1 and the noise points)
-    if np.min(labels_hdbscan) == (-1):                                                                                # if HDBSCAN has identified noise
-        Iq = Iq[1:]                                                                                                   # delete the first entry, as this is the Iq of the noise (which isn't a cluster)
-    clusters_by_max_Iq_no_noise = np.argsort(Iq)[::-1]                                                       # clusters by best Iqfirst
-    Iq_sorted = np.sort(Iq)[::-1]                                                                                     # cluster quality index, with firs value for first centrotype (ie first row of S_best)
-    print('Done!')
-    
-    
-    #5:  2d manifold with all the recovered sources
-    print('Starting to calculate the 2D manifold representation....', end = "")
-    manifold_tsne = TSNE(n_components = 2, metric = 'precomputed', perplexity = perplexity, early_exaggeration = early_exaggeration)
-    xy_tsne = manifold_tsne.fit(D).embedding_
-    print('Done!' )
-    
-    
-    if fig_kwargs['figures'] != "none":
-        _ = plot_cluster_results(labels = labels_hdbscan, interactive = True, images_r3 = S_hist_r3, order = clusters_by_max_Iq_no_noise, Iq = Iq, 
-                                 title = '03_clustering_and_manifold', xy2 = xy_tsne, hull = False, set_zoom = scatter_zoom, **fig_kwargs)
-
-    
-    # 6: Determine the number of clusters
-    if np.min(labels_hdbscan) == (-1):                                      # if we have noise (which is labelled as -1 byt HDBSCAN), 
-        n_clusters = np.size(np.unique(labels_hdbscan)) - 1                 # noise doesn't count as a cluster so we -1 from number of clusters
-    else:
-        n_clusters = np.size(np.unique(labels_hdbscan))                     # but if no noise, number of clusters is just number of different labels
-        
-    if n_clusters == 0:
-        raise Exception("No clusters have been found.  Often, this is caused by running the FastICA algorithm too few times, or setting"
-                        "the hdbscan_param 'min_cluster_size' too low.  Exiting...")
-        
-        
-    # 7:  Centrotypes (object that is most similar to all others in the cluster)
-    print('Calculating the centrotypes and associated time courses...', end = '')
-    S_best_args = np.zeros((n_clusters, 1)).astype(int)       
-    for i, clust_number in enumerate(clusters_by_max_Iq_no_noise):                              # loop through each cluster in order of how good they are
-        source_index = np.ravel(np.argwhere(labels_hdbscan == clust_number))                    # get the indexes of sources in this cluster
-        S_this_cluster = np.copy(S[source_index, :][:, source_index])                           # similarities for just this cluster
-        in_cluster_arg = np.argmax(np.sum(S_this_cluster, axis = 1))                            # the sum of a column of S_this... is the similarity between 1 source and all the others.  Look for the column that's the maximum
-        S_best_args[i,0] = source_index[in_cluster_arg]                                         # conver the number in the cluster to the number overall (ie 2nd in cluster is actually 120th source)     
-    S_best = np.copy(S_hist_r2[np.ravel(S_best_args),:])                                        # these are the centrotype sources
-    del source_index, S_this_cluster, in_cluster_arg, S_best_args                               # tidy up    
-    
-    # 8: Time courses using centrotypes
+    # 5: Make time courses using centrotypes
     tcs = np.zeros((n_ifgs, n_clusters))                                                        # store time courses as columns    
     source_residuals = np.zeros((n_ifgs,1))                                                     # initiate array to store these
     for i in range(n_ifgs):
@@ -244,22 +224,19 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
         source_residuals[i,0] = residual_centrotypes                                            # if bootstrapping, as sources come from bootstrapped data they are better for doing the fitting
     print('Done!')
     
-    
+ 
+    # 6: Possibly make figure of the clustering/2d manifold results and the centrotypes (chosen sources) and time courses.  
     if fig_kwargs['figures'] != "none":
         component_plot(S_best.T, mask, tcs.T, mask.shape, '04_ICASAR_sourcs_and_tcs', shared = 1, **fig_kwargs)         # plot the sources chosen
         
-        
+    # 7: Possibly make geocode the recovered sources and make a Google Earth file.  
     if ge_kmz and (lons is not None) and (lats is not None):
         print('Creating a Google Earth .kmz of the geocoded independent components... ', end = '')
         S_best_r3 = r2_to_r3(S_best, mask)
         r2_arrays_to_googleEarth(S_best_r3, lons, lats, 'IC', out_folder = out_folder)
         print('Done!')
-        
-    S_all_info = {'sources' : S_hist_r3,                                                                # package into a dict to return
-                  'labels' : labels_hdbscan,
-                  'xy' : xy_tsne       }
-    
-    # Save the results: 
+           
+    # 8: Save the results: 
     print('Saving the key results as a .pkl file... ', end = '')                                            # note that we don't save S_all_info as it's a huge file.  
     with open(f'{out_folder}ICASAR_results.pkl', 'wb') as f:
         pickle.dump(S_best, f)
@@ -269,10 +246,129 @@ def ICASAR(phUnw, mask, bootstrapping_param, n_comp, figures = "window", scatter
         pickle.dump(Iq_sorted, f)
         pickle.dump(n_clusters, f)
     print("Done!")
+    
+    S_all_info = {'sources' : sources_all_r3,                                                                # package into a dict to return
+              'labels' : labels_hdbscan,
+              'xy' : xy_tsne       }
+
+    return S_best, mask, tcs, source_residuals, Iq_sorted, n_clusters, S_all_info, phUnw_mean
+   
+
+#%%
+
+def bootstrapped_sources_to_centrotypes(sources_r2, sources_r3, hdbscan_param, tsne_param, 
+                                        bootstrap_settings, figures = "window", png_path='./'):
+    """ Given the products of the bootstrapping, run the 2d manifold and clustering algorithms to create centrotypes.  
+    Inputs:
+        sources_all_r2 | rank 2 array | all the sources recovered after bootstrapping.  If 5 components and 100 bootstrapped runs, this will be 500 x n_pixels (or n_times)
+        sources_all_r3 | rank 3 masked array | as above, but if signals are images, these can be reconstructed using the mask.  
+                                               None if working with 2d signals.  
+        hdbscan_param  | tuple | Used to control the clustering (min_cluster_size, min_samples)
+        tsne_param     | tuple | Used to control the 2d manifold learning  (perplexity, early_exaggeration)
+                bootstrap_settings | tuple | (number of bootsrapped runs, number components recovered in each run), e.g. (40,6) would mean that the first 40x6 recovered soruces came from bootsrapped
+                                        runs, whilst the remainder (?, 6) came from non-bootstrapped runs.  Note that the number of componnets recovered is the same for both bootstrapped
+                                        and non bootstrapped.  
+        figures | string,  "window" / "png" / "png+window" | controls if figures are produced (either as a window, saved as a png, or both)
+        png_path | string | if a png is to be saved, a path to a folder can be supplied, or left as default to write to current directory.  
+    Returns:
+        S_best | rank 2 array | the recovered sources as row vectors (e.g. 5 x 1230)
+        labels_hdbscan | rank 2 array | the cluster number for each of the sources in sources_all_r2 e.g 1000,
+        xy_tsne | rank 2 array | the x and y coordinates of where each space is in the 2D space.  e.g. 1000x2
+        clusters_by_max_Iq_no_noise | rank 1 array | clusters ranked by quality index (Iq).  e.g. 3,0,1,4,2
+        Iq | list | cluster quality index for each cluster.  Entry 0 is Iq (cluster quality index) for the first cluster
+
+    History:
+        2020/08/26 | MEG | Created from a script.  
+    """
+    import numpy as np
+    import hdbscan                                                               # used for clustering
+    from sklearn.manifold import TSNE                                            # t-distributed stochastic neighbour embedding
+
+    fig_kwargs = {"figures" : figures}
+    if figures == "png" or figures == "png+window":                                                         # if figures will be png, make 
+        fig_kwargs['png_path'] = png_path                                                                  # this will be passed to various figure plotting functions
+    elif figures == 'window' or figures == 'none':
+        pass
+    else:
+        raise ValueError("'figures' should be 'window', 'png', 'png+window', or 'None'.  Exiting...")
 
     
-    return S_best, mask, tcs, source_residuals, Iq_sorted, n_clusters, S_all_info, phUnw_mean
+    perplexity = tsne_param[0]                                                   # unpack tuples
+    early_exaggeration = tsne_param[1]
+    min_cluster_size = hdbscan_param[0]                                              
+    min_samples = hdbscan_param[1] 
+
+    # 1: Create the pairwise comparison matrix
+    print('\n Starting to compute the pairwise distance matrices....', end = '')
+    D, S = pairwise_comparison(sources_r2)
+    print('Done!')
+
+
+    #  2: Clustering with all the recovered sources   
+    print('Starting to cluster the sources using HDBSCAN....', end = "")  
+    clusterer_precom = hdbscan.HDBSCAN(metric = 'precomputed', min_cluster_size = min_cluster_size, 
+                                       min_samples = min_samples, cluster_selection_method = 'leaf')
+    labels_hdbscan = clusterer_precom.fit_predict(D)                                                                  # D is n_samples x n_samples, then returns a rank 1 which is the cluster number (ie label) for each source
+    Iq = cluster_quality_index(labels_hdbscan, S)                                                                     # calculate the cluster quality index, using S (n_samples x n_samples), and the label for each one
+                                                                                                                      # note that Iq is ordered by cluster, so the first value is the cluster quality index for 1st cluster (which is usually labelled -1 and the noise points)
+    if np.min(labels_hdbscan) == (-1):                                                                                # if HDBSCAN has identified noise
+        Iq = Iq[1:]                                                                                                   # delete the first entry, as this is the Iq of the noise (which isn't a cluster)
+    clusters_by_max_Iq_no_noise = np.argsort(Iq)[::-1]                                                                # clusters by best Iqfirst (ie cluster)
+    print('Done!')
+
+
+    # 3:  2d manifold with all the recovered sources
+    print('Starting to calculate the 2D manifold representation....', end = "")
+    manifold_tsne = TSNE(n_components = 2, metric = 'precomputed', perplexity = perplexity, early_exaggeration = early_exaggeration)
+    xy_tsne = manifold_tsne.fit(D).embedding_
+    print('Done!' )
+    
+    # 4: Add the main figure here
+    
+    print('Temporary edit!')
+    with open('plot_cluster_results_data.npy', 'wb') as f:
+        np.save(f, labels_hdbscan)
+        np.save(f, xy_tsne)
+        np.save(f, clusters_by_max_Iq_no_noise)
+        np.save(f, Iq)
+        np.save(f, sources_r2)
         
+
+    #import sys; sys.exit()
+
+    
+    if fig_kwargs['figures'] != "none":
+        _ = plot_cluster_results(labels_hdbscan, xy_tsne, sources_r2, sources_r3,
+                                 interactive = True, order = clusters_by_max_Iq_no_noise, Iq = Iq, bootstrap_settings = bootstrap_settings,
+                                 title = '03_clustering_and_manifold', hull = False, set_zoom = 0.2, **fig_kwargs)
+
+       
+    
+    # 4: Determine the number of clusters from HDBSCAN
+    if np.min(labels_hdbscan) == (-1):                                      # if we have noise (which is labelled as -1 byt HDBSCAN), 
+        n_clusters = np.size(np.unique(labels_hdbscan)) - 1                 # noise doesn't count as a cluster so we -1 from number of clusters
+    else:
+        n_clusters = np.size(np.unique(labels_hdbscan))                     # but if no noise, number of clusters is just number of different labels
+        
+    if n_clusters == 0:
+        raise Exception("No clusters have been found.  Often, this is caused by running the FastICA algorithm too few times, or setting"
+                        "the hdbscan_param 'min_cluster_size' too low.  Exiting...")
+        
+    # 4:  Centrotypes (object that is most similar to all others in the cluster)
+    print('Calculating the centrotypes and associated time courses...', end = '')
+    S_best_args = np.zeros((n_clusters, 1)).astype(int)                         
+    for i, clust_number in enumerate(clusters_by_max_Iq_no_noise):                              # loop through each cluster in order of how good they are (i.e. highest Iq first)
+        source_index = np.ravel(np.argwhere(labels_hdbscan == clust_number))                    # get the indexes of sources in this cluster
+        S_this_cluster = np.copy(S[source_index, :][:, source_index])                           # similarities for just this cluster
+        in_cluster_arg = np.argmax(np.sum(S_this_cluster, axis = 1))                            # the sum of a column of S_this... is the similarity between 1 source and all the others.  Look for the column that's the maximum
+        S_best_args[i,0] = source_index[in_cluster_arg]                                         # conver the number in the cluster to the number overall (ie 2nd in cluster is actually 120th source)     
+    S_best = np.copy(sources_r2[np.ravel(S_best_args),:])                                   # these are the centrotype sources
+
+    return S_best, labels_hdbscan, xy_tsne, clusters_by_max_Iq_no_noise, Iq
+
+
+
+     
 #%%
 
 def bootstrap_ICA(X, n_comp, bootstrap = True, ica_param = (1e-4, 150), 
@@ -308,6 +404,9 @@ def bootstrap_ICA(X, n_comp, bootstrap = True, ica_param = (1e-4, 150),
     import numpy as np
     from blind_signal_separation_funcitons import PCA_meg2, fastica_MEG
     from auxiliary_functions import  maps_tcs_rescale
+    
+    n_loop_max = 1000                                                               # when trying to make bootstrapped samples, if one can't be found after this many attempts, raise an error.  Best left high.  
+    
     n_ifgs = X.shape[0]
     
     # 0: do the bootstrapping and determine if we need to do PCA
@@ -318,7 +417,7 @@ def bootstrap_ICA(X, n_comp, bootstrap = True, ica_param = (1e-4, 150),
         while len(np.unique(input_ifg_args)) < n_comp and n_loop < 100:                                              # try making a list of samples to bootstrap with providing it has enough unique items for subsequent pca to work
             input_ifg_args = np.random.randint(0, n_ifgs, n_ifgs)                                                    # generate indexes of samples to select for bootstrapping 
             n_loop += 1
-        if n_loop == 100:                                                                                            # if we exited beacuse we were stuck in a loop, error message and stop
+        if n_loop == n_loop_max:                                                                                            # if we exited beacuse we were stuck in a loop, error message and stop
             raise Exception(f'Unable to bootstrap the data as the number of training data must be sufficently'
                             f' bigger than "n_components" sought that there are "n_components" unique items in'
                             f' a bootsrapped sample.  ')                                                             # error message
@@ -376,14 +475,19 @@ def pairwise_comparison(sources_r2):
 
 #%%
 
-def sources_list_to_r2_r3(sources, mask):
-    """A function to convert a list of the outputs of multiple ICA runs into rank 2 and rank 3 arrays.  
+def sources_list_to_r2_r3(sources, mask = None):
+    """A function to convert a list of the outputs of multiple ICA runs (which are lists) into rank 2 and rank 3 arrays.  
     Inputs:
         sources | list | list of runs of ica (e.g. 10, or 20 etc.), each item would be n_sources x n_pixels
+        mask | boolean | Only needed for two_d.  Converts row vector back to masked array.  
     Outputs:
         sources_r2 | rank 2 array | each source as a row vector (e.g. n_sources_total x n_pixels)
         sources_r3 | rank 3 array | each source as a rank 2 image. (e.g. n_souces_total x source_height x source_width )
-    2018_06_29 | MEG: Written
+    History:
+        2018_06_29 | MEG | Written
+        2020/08/27 | MEG | Update to handle both 1d and 2d signals.  
+       
+    
     """
     import numpy as np
     from auxiliary_functions import col_to_ma
@@ -398,10 +502,13 @@ def sources_list_to_r2_r3(sources, mask):
         sources_r2[i*n_comp:((i*n_comp) + n_comp), :] = sources[i]
     n_sources_total = np.size(sources_r2, axis = 0)
 
-    sources_r3 = np.zeros((col_to_ma(sources_r2[0,:], mask).shape))[np.newaxis, :, :]               # get the size of one image (so rank 2)
-    sources_r3 = np.repeat(sources_r3, n_sources_total, axis = 0)                                    # and then extend to make rank 3
-    for i in range(n_sources_total):
-        sources_r3[i,:,:] = col_to_ma(sources_r2[i,:], mask)   
+    if mask is not None:
+        sources_r3 = np.zeros((col_to_ma(sources_r2[0,:], mask).shape))[np.newaxis, :, :]               # get the size of one image (so rank 2)
+        sources_r3 = np.repeat(sources_r3, n_sources_total, axis = 0)                                    # and then extend to make rank 3
+        for i in range(n_sources_total):
+            sources_r3[i,:,:] = col_to_ma(sources_r2[i,:], mask)   
+    else:
+        sources_r3 = None
     return sources_r2, sources_r3
 
 
@@ -443,9 +550,10 @@ def cluster_quality_index(labels, S):
 
 
 
-def plot_cluster_results(labels = None, D = None, interactive = False, images_r3 = None, order = None, Iq = None, xy2 = None, 
+def plot_cluster_results(labels, xy, sources_r2, sources_r3,
+                         interactive = False, order = None, Iq = None, 
                          manifold = 'tsne', perplexity = 30, hull = True, set_zoom = 0.2, 
-                         title = "2d manifold of sources", BS_and_no_BS_settings = None, figures = 'window', png_path = './'): 
+                         title = "2d manifold of sources", bootstrap_settings = None, figures = 'window', png_path = './'): 
     """
      A function to plot clustering results in 2d.  Interactive as hovering over a point reveals the source that it corresponds to.  
     Only the distance between each point (D) is important, and the x and y values are noramlly random. 
@@ -458,18 +566,19 @@ def plot_cluster_results(labels = None, D = None, interactive = False, images_r3
         D | rank 2 array | distance metrix for all possible point pairs.  If xy2 is supplied, D is not required (as it is only used
                             by the manifold learning methods to creat the (x,y) positions for each point).  
         interactive | boolean | if True, hovering over point shows the source, if False, doesn't.  
-        images_r3 | rank 3 array | n_images x image rows | image columns             Doesn't support masked arrays
+        images_r3 | rank 3 array | n_images x image rows | image columns             Doesn't support masked arrays.  Not needed if working with 1d data.  
         order | none or rank 1 array | the order to plot the clusters in (ie usually plot the best (eg highest Iq) first)
         xy2 | many x 2 | xy and coordinates for the points if you wan't to specify where they're drawn
-        manifold | string | 'tsne' for t-distributed stochastic neighbour embedding, 'mds' for multidimension scaling.  
         perplexity | int | tsne parameter, balances attention between local and global aspects of the data.  
                             Low values lead to local variations dominating, high ?  
                             Should be lower than the number of data
         hull | boolean | If True, draw convex hulls around the clusters (with more than 3 points in them, as it's only a line for clusters of 2 points)
         set_zoom | flt | set the size of the interactive images of the source that pop up.  
         title | string | if supplied, applied to the figure and figure window
-        BS_and_no_BS_settings | tuple | (number of bootsrapped runs, number components recovered in each run), e.g. (40,6) would mean that the first 40x6 recovered soruces came from bootsrapped
-                                        runs, whilst the remainder (however many) came from non-bootstrapped runs.  
+        bootstrap_settings | tuple | (number of bootsrapped runs, number components recovered in each run), e.g. (40,6) would mean that the first 40x6 recovered soruces came from bootsrapped
+                                        runs, whilst the remainder (?, 6) came from non-bootstrapped runs.  Note that the number of componnets recovered is the same for both bootstrapped
+                                        and non bootstrapped.  
+        two_d | boolean | True if doing ICA with spatial maps flattenend to row vectos, False if using 1d data (e.g. a GPS station time series)
         figures | string,  "window" / "png" / "png+window" | controls if figures are produced (either as a window, saved as a png, or both)
         png_path | string | if a png is to be saved, a path to a folder can be supplied, or left as default to write to current directory.  
         
@@ -497,8 +606,6 @@ def plot_cluster_results(labels = None, D = None, interactive = False, images_r3
     import matplotlib.pyplot as plt
     from matplotlib.offsetbox import OffsetImage, AnnotationBbox
     from matplotlib.lines import Line2D                                  # for the manual legend
-    from sklearn.manifold import TSNE                                    # t-distributed stochastic neighbour embedding
-    from sklearn.manifold import MDS                                     # multidimension scaling
     from scipy.spatial import ConvexHull
     import random                                                        # for generating random colours
     r = lambda: random.randint(0,255)                                   # lambda function for random integers for colours
@@ -519,7 +626,7 @@ def plot_cluster_results(labels = None, D = None, interactive = False, images_r3
             ab.xybox = (xybox[0]*ws, xybox[1]*hs)               # if event occurs in the top or right quadrant of the figure, change the annotation box position relative to mouse
             ab.set_visible(True)                                # make annotation box visible
             ab.xy =(x[ind], y[ind])                             # place it at the position of the hovered scatter point
-            im.set_data(images_r3[ind,:,:])                           # set the image corresponding to that point
+            im.set_data(sources_r3[ind,:,:])                           # set the image corresponding to that point
         
         elif line_no_BS.contains(event)[0]:                             # False if cursor isn't over point, True if is
             ind = line_no_BS.contains(event)[1]["ind"]                   # find out the index within the array from the event
@@ -536,7 +643,7 @@ def plot_cluster_results(labels = None, D = None, interactive = False, images_r3
             ab.xybox = (xybox[0]*ws, xybox[1]*hs)               # if event occurs in the top or right quadrant of the figure, change the annotation box position relative to mouse
             ab.set_visible(True)                                # make annotation box visible
             ab.xy =(x[ind], y[ind])                             # place it at the position of the hovered scatter point
-            im.set_data(images_r3[ind,:,:])                           # set the image corresponding to that point
+            im.set_data(sources_r3[ind,:,:])                           # set the image corresponding to that point
         
         else:
             #if the mouse is not over a scatter point
@@ -547,25 +654,19 @@ def plot_cluster_results(labels = None, D = None, interactive = False, images_r3
     # 0/6: set some parameters
     if labels is None:    
         try:
-            n_sources_total = np.size(D, axis = 0)
+            n_sources_total = np.size(sources_r3, axis = 0)
         except:
-            pass
-        try:
-            n_sources_total = np.size(images_r3, axis = 0)
-        except:
-            print("Can't work out how many sources were recovered.  Either labels (labels), a pairwise distance matrix (D), or the sources themselves (images_r3) need to be provided.  ")
-            import sys
-            sys.exit()       
+            raise Exception("Can't work out how many sources were recovered.  Either labels (labels), a pairwise distance matrix (D), or the sources themselves (images_r3) need to be provided.  ")
         labels = np.zeros(n_sources_total, dtype = 'int64')
     n_sources_total = len(labels)                   
     n_clusters = len(np.unique(labels))
 
-    if BS_and_no_BS_settings is None:
+    if bootstrap_settings is None:
         n_BS = n_sources_total
         n_no_BS = 0
     else:
-        n_BS = BS_and_no_BS_settings[0]                         # the number of bootstrapped runs
-        n_comp = BS_and_no_BS_settings[1]                       # the number of components sought in each run
+        n_BS = bootstrap_settings[0]                         # the number of bootstrapped runs
+        n_comp = bootstrap_settings[1]                       # the number of components sought in each run
         n_BS = n_comp * n_BS                                    # the number of recovered sources that came from bootstrapped runs
         n_no_BS = (n_comp * n_sources_total) - n_BS             # the number of recovered sources that came from  non-bootstrapped runs
   
@@ -582,17 +683,8 @@ def plot_cluster_results(labels = None, D = None, interactive = False, images_r3
 
 
     # 1/6: xy positions for points need to be calculated if not provided
-    if xy2 is None:                                                                     # if we aren't supplied with (xy) coords for each point, make them
-        if manifold == 'tsne':
-            manifold_tsne = TSNE(n_components = 2, metric = 'precomputed', perplexity = perplexity)
-            xy2 = manifold_tsne.fit(D).embedding_
-        elif manifold == 'mds':
-            manifold_mds = MDS(n_components=2, dissimilarity='precomputed')
-            xy2 = manifold_mds.fit(D).embedding_        
-        else:
-            raise ValueError("manifold should be 'tsne' or 'mds'.  ")
-    x = xy2[:,0]                                                            # split x and y into seperate variables
-    y = xy2[:,1]
+    x = xy[:,0]                                                            # split x and y into seperate variables
+    y = xy[:,1]
 
 
 
@@ -629,7 +721,7 @@ def plot_cluster_results(labels = None, D = None, interactive = False, images_r3
     ax = fig.add_subplot(111)
     ax.set_xlabel('Distance 1')
     ax.set_ylabel('Distance 2')
-    if BS_and_no_BS_settings is not None:
+    if bootstrap_settings is not None:
         ax.set_title("'o': bootstrapped data, 'x': non-bootstrapped data")
     
     line_BS = ax.scatter(x[:n_BS],y[:n_BS], s = 14,  marker = 'o', c = labels_chosen_colours[:n_BS])           # plot the points
@@ -645,7 +737,7 @@ def plot_cluster_results(labels = None, D = None, interactive = False, images_r3
     if hull:
         for i in range(n_clusters):                                                     # add the hulls around the points in each cluster
             to_plot = np.argwhere(labels == i)
-            xy2_1_cluster = xy2[np.ravel(to_plot), :]                                   # get just the 2d data for each cluster that we're looping through
+            xy2_1_cluster = xy[np.ravel(to_plot), :]                                   # get just the 2d data for each cluster that we're looping through
             if np.size(xy2_1_cluster, axis = 0) > 2:                           # only draw convex hulls around the points if we're asked to, and if they have 3 or more points (will fail for clusters of less than 3 points. )
                 hull = ConvexHull(xy2_1_cluster)                                            # a hull around the points in a certain cluster
                 for simplex in hull.simplices:                                              # loop through each vertice
@@ -685,7 +777,7 @@ def plot_cluster_results(labels = None, D = None, interactive = False, images_r3
 
     # 6/6: if required, make interactive.  
     if interactive is True:
-        im = OffsetImage(images_r3[0,:,:], zoom=set_zoom)                               # create the annotations box
+        im = OffsetImage(sources_r3[0,:,:], zoom=set_zoom)                               # create the annotations box
         xybox=(50., 50.)
         ab = AnnotationBbox(im, (0,0), xybox=xybox, xycoords='data', boxcoords="offset points",  pad=0.3,  arrowprops=dict(arrowstyle="->"))
         ax.add_artist(ab)               # add it to the axes 
@@ -703,7 +795,7 @@ def plot_cluster_results(labels = None, D = None, interactive = False, images_r3
     else:
         pass
     
-    return xy2
+
 
 
 
