@@ -17,3 +17,9 @@ The algorithm also provides tools to visualise the recovered sources in order fo
 If longitude and latitude information for the interferograms is available, the independent components that are found can be geocoded and displayed in Google Earth:
 ![ge_print](https://user-images.githubusercontent.com/10498635/84274640-02aaa200-ab28-11ea-80e1-ed5e21f26528.jpg)
 
+
+# August 2020 addition:
+
+If both bootsrapped and non-bootstrapped runs are done in the same step, these can be displayed in the same plot.  Note that the non-boostrapped runs generally create very small/tight clusters (as the sources recovered are generally very similar), and it can be difficult to achieve reasonable clutering results due to two scales of clusters present.  In the example below, many sources recovered during bootstrapped runs ('o's) are marked as noise as they lie outside the compact clusters formed by the bootstrapped data ('x's):
+
+![03_clustering_and_manifold_with_bootstrapping](https://user-images.githubusercontent.com/10498635/91584350-6afc6900-e94a-11ea-856b-59f78f799814.png)
