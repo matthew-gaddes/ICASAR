@@ -209,9 +209,8 @@ def plot_temporal_signals(signals, title = None, signal_names = None,
 #%% MAINTAINED IN ITS OWN REPO (interactive_2d_plot) - DON'T MODIFY HERE!  
 
 
-
 def plot_2d_interactive_fig(xy, colours, spatial_data = None, temporal_data = None,
-                        inset_axes_side = 0.1, arrow_length = 0.1, figsize = (10,6), 
+                        inset_axes_side = {'x':0.1, 'y':0.1}, arrow_length = 0.1, figsize = (10,6), 
                         labels = None, legend = None, markers = None):
     """ Data are plotted in a 2D space, and when hovering over a point, further information about it (e.g. what image it is)  appears in an inset axes.  
     Inputs:
@@ -219,7 +218,7 @@ def plot_2d_interactive_fig(xy, colours, spatial_data = None, temporal_data = No
         colours | rank 1 array | e.g. 100, value used to set the colour of each data point
         spatial_data | dict or None | contains 'images_r3' in which the images are stored as in a rank 3 array (e.g. n_images x heigh x width).  Masked arrays are supported.  
         temporal_data | dict or None | contains 'tcs_r2' as time signals as row vectors and 'xvals' which are the times for each item in the timecourse.   
-        inset_axes_side | float | inset axes side length as a fraction of the full figure.  
+        inset_axes_side | dict | inset axes side length as a fraction of the full figure, in x and y direction
         arrow_length | float | lenth of arrow from data point to inset axes, as a fraction of the full figure.  
         figsize | tuple |  standard Matplotlib figsize tuple, in inches.  
         labels | dict or None | title for title, xlabel for x axis label, and ylabel for y axis label
@@ -234,6 +233,7 @@ def plot_2d_interactive_fig(xy, colours, spatial_data = None, temporal_data = No
         2020/09/10 | MEG | Add labels, and change so that images are stored as rank3 arrays.  
         2020/09/10 | MEG | Add legend option.  
         2020/09/11 | MEG | Add option to have different markers.  
+        2020/09/15 | MEG | Add option to set size of inset axes.  
     
     """
     def remove_axes2_and_arrow(fig):
@@ -318,14 +318,18 @@ def plot_2d_interactive_fig(xy, colours, spatial_data = None, temporal_data = No
                 # 2: Add the inset axes                
                 fig_x = axes_data_to_fig_percent(axes1.get_xlim(), (0.1, 0.9), xy[0,point_n] + arrow_lengths[0])                   # convert position on axes to position in figure, ready to add the inset axes
                 fig_y = axes_data_to_fig_percent(axes1.get_ylim(), (0.1, 0.9), xy[1,point_n] + arrow_lengths[1])                   # ditto for y dimension
-                if arrow_lengths[0] > 0 and arrow_lengths[1] > 0:                                                                    # top right quadrant
-                    inset_axes = fig.add_axes([fig_x, fig_y, inset_axes_side, inset_axes_side], anchor = 'SW')                       # create the inset axes, simple case, anochored to lower left forner
-                elif arrow_lengths[0] < 0 and arrow_lengths[1] > 0:                                                                  # top left quadrant
-                    inset_axes = fig.add_axes([fig_x - inset_axes_side, fig_y, inset_axes_side, inset_axes_side], anchor = 'SE')     # create the inset axes, nudged in x direction, anchored to lower right corner
-                elif arrow_lengths[0] > 0 and arrow_lengths[1] < 0:                                                                  # lower right quadrant
-                    inset_axes = fig.add_axes([fig_x, fig_y - inset_axes_side, inset_axes_side, inset_axes_side], anchor = 'NW')     # create the inset axes, nudged in y direction
-                else:
-                    inset_axes = fig.add_axes([fig_x - inset_axes_side, fig_y - inset_axes_side, inset_axes_side, inset_axes_side], anchor = 'NE')  # create the inset axes, nudged in both x and y
+                if arrow_lengths[0] > 0 and arrow_lengths[1] > 0:                                                          # top right quadrant
+                    inset_axes = fig.add_axes([fig_x, fig_y,                                                               # create the inset axes, simple case, anochored to lower left forner
+                                               inset_axes_side['x'], inset_axes_side['y']], anchor = 'SW')               
+                elif arrow_lengths[0] < 0 and arrow_lengths[1] > 0:                                                        # top left quadrant
+                    inset_axes = fig.add_axes([fig_x - inset_axes_side['x'], fig_y,                                        # create the inset axes, nudged in x direction, anchored to lower right corner
+                                               inset_axes_side['x'], inset_axes_side['y']], anchor = 'SE')     
+                elif arrow_lengths[0] > 0 and arrow_lengths[1] < 0:                                                        # lower right quadrant
+                    inset_axes = fig.add_axes([fig_x, fig_y - inset_axes_side['y'],                                        # create the inset axes, nudged in y direction
+                                               inset_axes_side['x'], inset_axes_side['y']], anchor = 'NW')                 
+                else:                                                                                                      # lower left quadrant
+                    inset_axes = fig.add_axes([fig_x - inset_axes_side['x'], fig_y - inset_axes_side['y'],                 # create the inset axes, nudged in both x and y
+                                               inset_axes_side['x'], inset_axes_side['y']], anchor = 'NE')                
                 
                 # 3: Plot on the inset axes
                 if temporal_data is not None:
@@ -385,6 +389,7 @@ def plot_2d_interactive_fig(xy, colours, spatial_data = None, temporal_data = No
                      bbox_to_anchor=(1., 0.5), loc = 'center right', bbox_transform=plt.gcf().transFigure)                           # Put a legend to the right of the current axis.  bbox is specified in figure coordinates.  
               
     fig.canvas.mpl_connect("motion_notify_event", hover)                                # connect the figure and the function.  
+
 
 #%%
 

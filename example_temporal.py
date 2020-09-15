@@ -41,11 +41,12 @@ ICASAR_settings = {"n_comp" : 5,                                    # number of 
                     "ica_param" : (1e-2, 150),                      # (tolerance, max iterations)
                     "hdbscan_param" : (35,10),                      # (min_cluster_size, min_samples) Discussed in more detail in Mcinnes et al. (2017). min_cluster_size sets the smallest collection of points that can be considered a cluster. min_samples sets how conservative the clustering is. With larger values, more points will be considered noise. 
                     "ge_kmz"    :  True,                            # make a google earth .kmz of the ICs
-                    "figures" : "png+window"}                       # if png, saved in a folder as .png.  If window, open as interactive matplotlib figures,
+                    "figures" : "png+window",                       # if png, saved in a folder as .png.  If window, open as interactive matplotlib figures,
+                    "inset_axes_side" : {'x':0.3, 'y':0.1}}         # the size of thei inset axes created in the clustering and manifold figure.  
  
 
 #%% Make synthetic time series and view it
-np.random.seed(1)                                                                       # 
+np.random.seed(1)                                                                       # 1 is standard for examples
 
 time = np.linspace(0, 8, n_samples)
 signal_names = ['Sin', 'Square', 'Saw tooth', ' Triangular']
