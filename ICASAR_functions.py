@@ -23,8 +23,8 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     
     Inputs:
         n_comp | int | Number of ocmponents that are retained from PCA and used as the input for ICA.  
-        spatial_data | dict or None | contains 'sources_r2' in which the images are stored as row vectors and 'mask', which converts a row vector back to a masked array
-        temporal_data | dict or None | contains 'tcs_r2' as time signals as row vectors and 'xvals' which are the times for each item in the timecourse.   
+        spatial_data | dict or None | contains 'mixtures_r2' in which the images are stored as row vectors and 'mask', which converts a row vector back to a masked array
+        temporal_data | dict or None | contains 'mixtures_r2' as time signals as row vectors and 'xvals' which are the times for each item in the timecourse.   
         figures | string,  "window" / "png" / "none" / "png+window" | controls if figures are produced, not none is the strin none, not the NoneType None
         
         bootstrapping_param | tuple | (number of ICA runs with bootstrap, number of ICA runs without bootstrapping )  e.g. (100,10)
@@ -60,7 +60,8 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         2020/06/12 | MEG | Add option to name outfolder where things are saved, and save results there as a pickle.  
         2020/06/24 | MEG | Add the ica_verbose option so that ICASAR can be run without generating too many terminal outputs.  
         2020/09/09 | MEG | Major update to now handle temporal data (as well as spatial data)
-        2020/09/11 | MEG | 
+        2020/09/11 | MEG | Small update to allow an argument to be passed to plot_2d_interactive_fig to set the size of the inset axes.  
+        2020/09/16 | MEG | Update to clarify the names of whether variables contain mixtures or soruces.  
     
     Stack overview:
         PCA_meg2                                        # do PCA
@@ -70,7 +71,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         bootstrap_ICA                                   with bootstrapping
         bootstrap_ICA                                   and without bootstrapping
         bootstrapped_sources_to_centrotypes             # run HDBSCAN (clustering), TSNE (2d manifold) and make figure showing this.  Choose source most representative of each cluster (centrotype).  
-        plot_2d_exploratory_fig                        # interactive figure showing clustering and 2d manifold representaiton.  
+        plot_2d_interactive_fig                         # interactive figure showing clustering and 2d manifold representaiton.  
         bss_components_inversion                        # inversion to get time coures for each centrotype.  
         component_plot                                  # with ICASAR sources
         r2_arrays_to_googleEarth                        # geocode spatial sources and make a .kmz for use with Google Earth.  
@@ -95,11 +96,11 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         raise Exception("Only either spatial or temporal data can be supplied, but not both.  Exiting.  ")
     
     if spatial_data is not None:
-        signals = spatial_data['sources_r2']
+        signals = spatial_data['mixtures_r2']
         mask = spatial_data['mask']
         spatial = True
     else:
-        signals = temporal_data['tcs_r2']
+        signals = temporal_data['mixtures_r2']
         xvals = temporal_data['xvals']
         spatial = False
     if np.max(np.isnan(signals)):
@@ -215,11 +216,11 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     S_hist = S_hist_BS + S_hist_no_BS                                                                   # list containing the soures from each run.  i.e.: each os n_components x n_pixels
     
     if spatial:
-        sources_all_r2, sources_all_r3 = sources_list_to_r2_r3(S_hist, mask)                                # convert to more useful format.  r2 one is (n_components x n_runs) x n_pixels, r3 one is (n_components x n_runs) x ny x nx, and a masked array
+        sources_all_r2, sources_all_r3 = sources_list_to_r2_r3(S_hist, mask)                            # convert to more useful format.  r2 one is (n_components x n_runs) x n_pixels, r3 one is (n_components x n_runs) x ny x nx, and a masked array
     else:
-        sources_all_r2 = S_hist[0]
-        for S_hist_one in S_hist[1:]:
-            sources_all_r2 = np.vstack((sources_all_r2, S_hist_one))
+        sources_all_r2 = S_hist[0]                                                                      # get the sources recovered by the first run
+        for S_hist_one in S_hist[1:]:                                                                   # and then loop through the rest
+            sources_all_r2 = np.vstack((sources_all_r2, S_hist_one))                                    # stacking them vertically.  
                         
        
     # 4: Do clustering and 2d manifold representation, plus get centrotypes of clusters, and make an interactive plot.   
@@ -243,7 +244,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         plot_2d_labels['title']
         spatial_data = {'images_r3' : sources_all_r3}                                                       # spatial data stored in rank 3 format (ie n_imaces x height x width)
         plot_2d_interactive_fig(xy_tsne.T, colours = labels_colours, spatial_data = spatial_data,                 # make the 2d interactive plot
-                        labels = plot_2d_labels, legend = legend_dict, markers = marker_dict, inset_axes_side = inset_axes_side)
+                                labels = plot_2d_labels, legend = legend_dict, markers = marker_dict, inset_axes_side = inset_axes_side)
     
     else:
         temporal_data_S_all = {'tcs_r2' : sources_all_r2,
@@ -264,7 +265,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     print('Done!')
     
  
-    # 6: Possibly make figure of the clustering/2d manifold results and the centrotypes (chosen sources) and time courses.  
+    # 6: Possibly make figure of the centrotypes (chosen sources) and time courses.  
     if fig_kwargs['figures'] != "none":
         if spatial:
             plot_spatial_signals(S_best.T, mask, tcs.T, mask.shape, title = '04_ICASAR_sourcs_and_tcs', shared = 1, **fig_kwargs)               # plot the chosen sources
@@ -314,7 +315,7 @@ def bootstrapped_sources_to_centrotypes(sources_r2, hdbscan_param, tsne_param,
                                         bootstrap_settings, figures = "window", png_path='./'):
     """ Given the products of the bootstrapping, run the 2d manifold and clustering algorithms to create centrotypes.  
     Inputs:
-        sources_r2 | rank 2 array | all the sources recovered after bootstrapping.  If 5 components and 100 bootstrapped runs, this will be 500 x n_pixels (or n_times)
+        mixtures_r2 | rank 2 array | all the sources recovered after bootstrapping.  If 5 components and 100 bootstrapped runs, this will be 500 x n_pixels (or n_times)
         hdbscan_param  | tuple | Used to control the clustering (min_cluster_size, min_samples)
         tsne_param     | tuple | Used to control the 2d manifold learning  (perplexity, early_exaggeration)
         bootstrap_settings | tuple | (number of bootsrapped runs, number components recovered in each run), e.g. (40,6) would mean that the first 40x6 recovered soruces came from bootsrapped

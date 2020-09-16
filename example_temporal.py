@@ -75,7 +75,7 @@ plot_temporal_signals(X, title = 'Mixtures')
 
 #%% do ICA with ICSAR function
  
-temporal_data = {'tcs_r2' : X,
+temporal_data = {'mixtures_r2' : X,
                  'xvals' : np.arange(0, X.shape[1])}
 
 S_best, time_courses, x_train_residual_ts, Iq, n_clusters, S_all_info, phUnw_mean  = ICASAR(temporal_data = temporal_data, **ICASAR_settings) 

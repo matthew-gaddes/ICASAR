@@ -72,12 +72,11 @@ fig3.canvas.set_window_title("Interferograms as row vectors and a mask")
 
 #%% do ICA with ICSAR function
 
-spatial_data = {'sources_r2' : phUnw,
+spatial_data = {'mixtures_r2' : phUnw,
                 'mask'      : pixel_mask}
  
 S_best, time_courses, x_train_residual_ts, Iq, n_clusters, S_all_info, phUnw_mean  = ICASAR(spatial_data = spatial_data, lons=lons, lats=lats, **ICASAR_settings) 
       
-
 
 
 #%% We can reconstruct the data using the sources and timecourses, but don't forget that ICA returns mean centered sources 
