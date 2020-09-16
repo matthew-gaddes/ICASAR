@@ -96,14 +96,14 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         raise Exception("Only either spatial or temporal data can be supplied, but not both.  Exiting.  ")
     
     if spatial_data is not None:
-        signals = spatial_data['mixtures_r2']
+        mixtures = spatial_data['mixtures_r2']
         mask = spatial_data['mask']
         spatial = True
     else:
-        signals = temporal_data['mixtures_r2']
+        mixtures = temporal_data['mixtures_r2']
         xvals = temporal_data['xvals']
         spatial = False
-    if np.max(np.isnan(signals)):
+    if np.max(np.isnan(mixtures)):
         raise Exception("Unable to proceed as the data ('phUnw') contains Nans.  ")
     
     # sort out various things for figures, and check input is of the correct form
@@ -142,14 +142,14 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     n_converge_bootstrapping = bootstrapping_param[0]                 # unpack input tuples
     n_converge_no_bootstrapping = bootstrapping_param[1]
     
-    # 0: Mean centre the signals
-    signals_mean = np.mean(signals, axis = 1)[:,np.newaxis]                                         # get the mean for each ifg (ie along rows.  )
-    signals_mc = signals - signals_mean                                                           # mean centre the data (along rows)
-    n_signals = np.size(signals_mc, axis = 0)     
+    # 0: Mean centre the mixtures
+    mixtures_mean = np.mean(mixtures, axis = 1)[:,np.newaxis]                                         # get the mean for each ifg (ie along rows.  )
+    mixtures_mc = mixtures - mixtures_mean                                                           # mean centre the data (along rows)
+    n_mixtures = np.size(mixtures_mc, axis = 0)     
        
     # 1: do sPCA once
     print('Performing PCA to whiten the data....', end = "")
-    PC_vecs, PC_vals, PC_whiten_mat, PC_dewhiten_mat, x_mc, x_decorrelate, x_white = PCA_meg2(signals_mc, verbose = False)    
+    PC_vecs, PC_vals, PC_whiten_mat, PC_dewhiten_mat, x_mc, x_decorrelate, x_white = PCA_meg2(mixtures_mc, verbose = False)    
     if spatial:
         x_decorrelate_rs, PC_vecs_rs = maps_tcs_rescale(x_decorrelate[:n_comp,:], PC_vecs[:,:n_comp])                                           # x decorrlates is n_comps x n_samples (e.g. 5 x 2000)
     else:
@@ -175,7 +175,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         print(f"FastICA progress with bootstrapping: ", end = '')
     while n_ica_converge < n_converge_bootstrapping:
 
-        S, A, ica_converged = bootstrap_ICA(signals_mc, n_comp, bootstrap = True, ica_param = ica_param, verbose = fastica_verbose)
+        S, A, ica_converged = bootstrap_ICA(mixtures_mc, n_comp, bootstrap = True, ica_param = ica_param, verbose = fastica_verbose)
         if ica_converged:
             n_ica_converge += 1
             A_hist_BS.append(A)                                     # record results
@@ -195,7 +195,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     if ica_verbose == 'short' and n_converge_no_bootstrapping > 0:                           # if we're only doing short version of verbose, and are actually doing ICA with no bootstrapping
         print(f"FastICA progress without bootstrapping: ", end = '')
     while n_ica_converge < n_converge_no_bootstrapping:
-        S, A, ica_converged = bootstrap_ICA(signals_mc, n_comp, bootstrap = False, ica_param = ica_param,
+        S, A, ica_converged = bootstrap_ICA(mixtures_mc, n_comp, bootstrap = False, ica_param = ica_param,
                                             X_whitened = x_white, dewhiten_matrix = PC_whiten_mat, verbose = fastica_verbose)
         
         if ica_converged:
@@ -256,10 +256,10 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     n_clusters = S_best.shape[0]                                                                     # the number of sources/centrotypes is equal to the number of clusters    
     
     # 5: Make time courses using centrotypes
-    tcs = np.zeros((n_signals, n_clusters))                                                        # store time courses as columns    
-    source_residuals = np.zeros((n_signals,1))                                                     # initiate array to store these
-    for i in range(n_signals):
-        m, residual_centrotypes = bss_components_inversion(S_best, signals_mc[i,:])                # fit each of the training ifgs with the chosen ICs
+    tcs = np.zeros((n_mixtures, n_clusters))                                                        # store time courses as columns    
+    source_residuals = np.zeros((n_mixtures,1))                                                     # initiate array to store these
+    for i in range(n_mixtures):
+        m, residual_centrotypes = bss_components_inversion(S_best, mixtures_mc[i,:])                # fit each of the training ifgs with the chosen ICs
         tcs[i,:] = m                                                                            # store time course
         source_residuals[i,0] = residual_centrotypes                                            # if bootstrapping, as sources come from bootstrapped data they are better for doing the fitting
     print('Done!')
@@ -306,7 +306,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
                   'labels' : labels_hdbscan,
                   'xy' : xy_tsne       }
     
-    return S_best, tcs, source_residuals, Iq_sorted, n_clusters, S_all_info, signals_mean
+    return S_best, tcs, source_residuals, Iq_sorted, n_clusters, S_all_info, mixtures_mean
    
 
 #%%
