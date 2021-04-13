@@ -8,14 +8,6 @@ An example of the ICASAR software with synthetic data
 
 """
 
-# Done -  change colours of 2d plot so that noise are grey
-# Done - add legend to 2d plots
-# done - look at random selection of signals and why stuck in loop
-# Done - look at rescaling thing.  
-# Done get spatial example working
-# Done - try adding noise
-# Done try adding vanilla ICA
-# Done - make 2d plot plot both bootstrapped and non bootstrapped.  
 
 #%% Imports
 
@@ -52,7 +44,7 @@ time = np.linspace(0, 8, n_samples)
 signal_names = ['Sin', 'Square', 'Saw tooth', ' Triangular']
 s1 = np.sin(2 * time)                                                                   # Signal 1 : sinusoidal signal
 s2 = np.sign(np.sin(3 * time))                                                          # Signal 2 : square signal
-s3 = signal.sawtooth(5 * time)                                                  # Signal 3 : saw tooth signal
+s3 = signal.sawtooth(5 * time)                                                          # Signal 3 : saw tooth signal
 s4 = signal.sawtooth(10*time, 0.5)                                                      # Signal 4 : triangular wave signal (ie a symetrical tringular wave)
 S = np.c_[s1, s2, s3, s4].T                                                             # combine, rows are variables, columns are number of times/samples.  
 n_signals = np.size(S, axis = 0)                                                        # get the number of signals.  

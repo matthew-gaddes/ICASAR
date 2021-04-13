@@ -24,16 +24,16 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     Inputs:
         n_comp | int | Number of ocmponents that are retained from PCA and used as the input for ICA.  
         spatial_data | dict or None | contains 'mixtures_r2' in which the images are stored as row vectors and 'mask', which converts a row vector back to a masked array
-        temporal_data | dict or None | contains 'mixtures_r2' as time signals as row vectors and 'xvals' which are the times for each item in the timecourse.   
-        figures | string,  "window" / "png" / "none" / "png+window" | controls if figures are produced, not none is the strin none, not the NoneType None
+        temporal_data | dict or None | contains 'mixtures_r2' as time signals as row vectors and 'xvals' which are the times for each item in the time signals.   
+        figures | string,  "window" / "png" / "none" / "png+window" | controls if figures are produced, noet none is the string none, not the NoneType None
         
         bootstrapping_param | tuple | (number of ICA runs with bootstrap, number of ICA runs without bootstrapping )  e.g. (100,10)
         ica_param | tuple | Used to control ICA, (ica_tol, ica_maxit)
         hdbscan_param  | tuple | Used to control the clustering (min_cluster_size, min_samples)
         tsne_param     | tuple | Used to control the 2d manifold learning  (perplexity, early_exaggeration)
         
-        lons | rank 1 array | lons of each pixel in phUnw
-        lats | rank 1 array | lats of each pixel in phUnw
+        lons | rank 2 array | lons of each pixel in the image.  Changed to rank 2 in version 2.0, from rank 1 in version 1.0  
+        lats | rank 2 array | lats of each pixel in theimage. Changed to rank 2 in version 2.0, from rank 1 in version 1.0
         ge_kmz | Boolean | If Ture and lons and lats are provided, a .kmz of the ICs is produced for viewing in GoogleEarth
         out_folder | string | if desired, can set the name of the folder results are saved to
         
@@ -62,6 +62,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         2020/09/09 | MEG | Major update to now handle temporal data (as well as spatial data)
         2020/09/11 | MEG | Small update to allow an argument to be passed to plot_2d_interactive_fig to set the size of the inset axes.  
         2020/09/16 | MEG | Update to clarify the names of whether variables contain mixtures or soruces.  
+        2021/04/13 | MEG | Update so that lons and lats are now rank2 tensors (ie matrices with a lon or lat for each pixel)
     
     Stack overview:
         PCA_meg2                                        # do PCA
@@ -88,7 +89,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     from auxiliary_functions import plot_spatial_signals, plot_temporal_signals, plot_pca_variance_line, plot_2d_interactive_fig
     from auxiliary_functions import prepare_point_colours_for_2d, prepare_legends_for_2d
 
-    
+
     # Check inputs, unpack either spatial or temporal data, and check for nans
     if temporal_data is None and spatial_data is None:                                                                  # check inputs
         raise Exception("One of either spatial or temporal data must be supplied.  Exiting.  ")
@@ -123,6 +124,9 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         print(f"'ica_verbose should be either 'long' or 'short'.  Setting to 'short' and continuing.  ")
         ica_verbose = 'short'
         fastica_verbose = False
+         
+    if (len(lons.shape) != 2) or (len(lats.shape) != 2):
+        raise Exception(f"'lons' and 'lats' should be rank 2 tensors (i.e. matrices with a lon or lat for each pixel in the interferogram.  Exiting...  ")
         
         
     # create a folder that will be used for outputs
@@ -134,7 +138,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         print("Failed!")                                                                                # 
     try:
         print("Trying to create a new outputs folder... ", end = '')                                    # try to make a new folder
-        os.mkdir(out_folder)                                                                       
+        os.makedirs(out_folder)                                                                         # swtiched to makedirs (from mkdir) to hand paths with intermedeaite folders.          
         print('Done!')
     except:
         print("Failed!")                                                                                          
@@ -273,11 +277,14 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
             plot_temporal_signals(S_best, '04_ICASAR_sources', **fig_kwargs)
         
     # 7: Possibly geocode the recovered sources and make a Google Earth file.  
+    #import pdb; pdb.set_trace()
+    from auxiliary_functions import r2_arrays_to_googleEarth
+    
     if spatial:
         if ge_kmz and (lons is not None) and (lats is not None):
             print('Creating a Google Earth .kmz of the geocoded independent components... ', end = '')
             S_best_r3 = r2_to_r3(S_best, mask)
-            r2_arrays_to_googleEarth(S_best_r3, lons, lats, 'IC', out_folder = out_folder)
+            r2_arrays_to_googleEarth(S_best_r3, lons, lats, 'IC', out_folder = out_folder)                              # note that lons and lats should be rank 2 (ie an entry for each pixel in the ifgs)
             print('Done!')
                
     # 8: Save the results: 

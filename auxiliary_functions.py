@@ -576,8 +576,8 @@ def r2_arrays_to_googleEarth(images_r3_ma, lons, lats, layer_name_prefix = 'laye
     """ Given one or several arrays in a rank3 array, create a multilayer Google Earth file (.kmz) of them.  
     Inputs:
         images_r3_ma | rank3 masked array |x n_images x ny x nx
-        lons | rank 1 array | lons of each pixel in the image.  
-        lats | rank 1 array | lats of each pixel in theimage
+        lons | rank 2 array | lons of each pixel in the image.  
+        lats | rank 2 array | lats of each pixel in theimage. 
         layer_name_prefix | string | Can be used to set the name of the layes in the kmz (nb of the form layer_name_prefix_001 etc. )
         kmz_filename | string | Sets the name of the kmz produced
         out_folder | string | path to location to save .kmz.  Should have a trailing /
@@ -585,13 +585,20 @@ def r2_arrays_to_googleEarth(images_r3_ma, lons, lats, layer_name_prefix = 'laye
         kmz file
     History:
         2020/06/10 | MEG | Written
-        2020/06
+        2021/03/11 | MEG | Update to handle incorrectly sized lons and lats arrays (e.g. rank2 arrays instead of rank 1)
     """
     import numpy as np
     import os
     import shutil
     import simplekml
    
+    
+   
+    # if lats[0] < lats[-1]:
+    #     print(f"Reversing the lats.  lats[0] should be the bottom left, and therefore the lowest value.  Previously lats[0] was {lats[0]}, but now it is ", end = '')
+    #     lats = lats[::-1]
+    #     print(f"{lats[0]}.  ")
+
 
     n_images = images_r3_ma.shape[0]    
     # 0 temporary folder for intermediate pngs
@@ -617,8 +624,8 @@ def r2_arrays_to_googleEarth(images_r3_ma, lons, lats, layer_name_prefix = 'laye
         ground = kml.newgroundoverlay(name= layer_name)                                 # add the overlay to the kml file
         ground.icon.href = f"./temp_kml/{layer_name}.png"                               # and the actual image part
     
-        ground.gxlatlonquad.coords = [(lons[0], lats[0]), (lons[-1],lats[0]),           # lon, lat of image south west, south east
-                                      (lons[-1], lats[-1]), (lons[0],lats[-1])]         # north east, north west  - order is anticlockwise around the square, startign in the lower left
+        ground.gxlatlonquad.coords = [(lons[-1,0], lats[-1,0]), (lons[-1,-1],lats[-1,-1]),           # lon, lat of image south west, south east
+                                      (lons[0,-1], lats[0,-1]), (lons[0,0],lats[0,0])]         # north east, north west  - order is anticlockwise around the square, startign in the lower left
        
     #3: Tidy up at the end
     kml.savekmz(f"{out_folder}{kmz_filename}.kmz", format=False)                                    # Saving as KMZ

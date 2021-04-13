@@ -31,14 +31,31 @@ ICASAR_settings = {"n_comp" : 5,                                    # number of 
 #%% Import the data 
 
 with open('synthetic_data.pkl', 'rb') as f:
-    A_dc = pickle.load(f)
-    S_synth = pickle.load(f)
-    N_dc = pickle.load(f)
-    pixel_mask = pickle.load(f)
-    lons = pickle.load(f)
-    lats = pickle.load(f)
+    A_dc = pickle.load(f)                                           # these are the time courses and  are column vectors.  They control the strength through time of each of the synthetic sources.  
+    S_synth = pickle.load(f)                                        # these are the synthetic (spatial) sources and are row vectors.  
+    N_dc = pickle.load(f)                                           # these are the noise for each interferogarm.  
+    pixel_mask = pickle.load(f)                                     # this is the same shape as an interferogram, True for pixels that are masked
+    lons = pickle.load(f)                                           # the longitudes of the lower left corner of each pixel
+    lats = pickle.load(f)                                           # the latitues of the lower left corner of each pixel.  
    
     
+# lons_r2 = np.repeat(lons[np.newaxis,:], 217, 0)
+# lats_r2 = np.flipud(np.repeat(lats[:, np.newaxis], 217, 1))
+
+# import sys
+# sys.path.append("/home/matthew/university_work/python_stuff/python_scripts")
+# from small_plot_functions import matrix_show, pngs_to_gif
+
+# with open('synthetic_data.pkl', 'wb') as f:
+#     pickle.dump(A_dc, f)
+#     pickle.dump(S_synth, f)
+#     pickle.dump(N_dc, f)
+#     pickle.dump(pixel_mask, f)
+#     pickle.dump(lons_r2, f)
+#     pickle.dump(lats_r2, f)
+    
+# sys.exit()
+
 
 #%% Make synthetic time series and view it
     
