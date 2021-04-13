@@ -6,7 +6,60 @@ Created on Tue Dec 17 18:19:37 2019
 @author: matthew
 """
 
+#%%
+
+def create_all_ifgs(ifgs_r2):
+    """Given a rank 2 of incremental ifgs, calculate all the possible ifgs that still step forward in time (i.e. if deformation is positive in all incremental ifgs, 
+    it remains positive in all the returned ifgs.)
+    Inputs:
+        ifgs_r2 | rank 2 array | Interferograms as row vectors.  
+    Returns:
+        ifgs_r3 | rank 3 array | all possible ifgs (including the negative ones).  First two dimensions are the acquisitions, so row 3 col 4 is the ifg between acquisitions 3 and 4.  
+        ifgs_r2 | rank 2 array | Only the ones that are non-zero (the diagonal in ifgs_r3) and in the lower left corner (so deformation isn't reversed.  )
+    History:
+        2021_04_13 | MEG | Written
+    """
+    import numpy as np
+    
+    def triange_lower_left_indexes(side_length):
+        """ For a square matrix of size side_length, get the index of all the values that are in the lower
+        left quadrant (i.e. all to the lower left of the diagonals).  
+        Inputs:
+            side_length | int | side length of the square.  e.g. 5 for a 5x5
+        Returns:
+            lower_left_indexes | rank 2 array | indexes of all elements below the diagonal.  
+        History:
+            2021_04_13 | MEG | Written.  
+        """
+        import numpy as np
+        zeros_array = np.ones((side_length, side_length))                                                               # initate as ones so none will be selected.  
+        zeros_array = np.triu(zeros_array)                                                                              # set the lower left to 0s
+        lower_left_indexes = np.argwhere(zeros_array == 0)                                                              # select only the lower lefts
+        return lower_left_indexes
+    
+    n_pixs = ifgs_r2.shape[1]
+    n_acq = ifgs_r2.shape[0] + 1
+    
+    # 1: convert from daisy chain of incremental to a relative to a single master at the start of the time series.  
+    acq1_def = np.zeros((1, n_pixs))                                                # deformation is 0 at the first acquisition
+    ifgs_cs = np.cumsum(ifgs_r2, axis = 0)                                          # convert from incremental to cumulative.  
+    ifgs_cs = np.vstack((acq1_def, ifgs_cs))
+    
+    # 2: create all possible ifgs
+    ifgs_all_r3 = np.zeros((n_acq, n_acq, n_pixs))                                    # cube to store all possible ifgs in
+    for i in range(n_acq):                                                          # loop through each column and add the ifgs.  
+        ifgs_all_r3[:,i,] = ifgs_cs - ifgs_cs[i,]
+        
+    # 3: Get only the positive ones (ie the lower left quadrant)    
+    lower_left_indexes = triange_lower_left_indexes(n_acq)                              # get the indexes of the ifgs in the lower left corner (ie. non 0, and with unreveresed deformation.  )
+    ifgs_all_r2 = ifgs_all_r3[lower_left_indexes[:,0], lower_left_indexes[:,1], :]      # get those ifgs and store as row vectors.  
+    
+    return ifgs_all_r3, ifgs_all_r2
+
+
+
   
+#%%
 def plot_spatial_signals(spatial_map, pixel_mask, timecourse, shape, title, shared = 0, 
                          temporal_baselines = None, figures = "window",  png_path = './'):
     """

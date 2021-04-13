@@ -10,7 +10,7 @@ Created on Tue May 29 11:23:10 2018
 def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window", 
            bootstrapping_param = (200,0), ica_param = (1e-4, 150), tsne_param = (30,12), hdbscan_param = (35,10),
            lons = None, lats = None, ge_kmz = True, out_folder = './ICASAR_results/',
-           ica_verbose = 'long', inset_axes_side = {'x':0.1, 'y':0.1}):
+           ica_verbose = 'long', inset_axes_side = {'x':0.1, 'y':0.1}, create_all_ifgs = False):
     """
     Perform ICASAR, which is a robust way of applying sICA to data.  As PCA is also performed as part of this,
     the sources and time courses found by PCA are also returned.  Note that this can be run with eitehr 1d data (e.g. time series for a GPS station),
@@ -39,6 +39,12 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         
         ica_verbose | 'long' or 'short' | if long, full details of ICA runs are given.  If short, only the overall progress 
         inset_axes_side | dict | inset axes side length as a fraction of the full figure, in x and y direction in the 2d figure of clustering results.  
+        
+        create_all_ifgs | boolean | If spatial_data contains incremental ifgs (i.e. the daisy chain), these can be recombined to create interferograms 
+                                    between all possible acquisitions to improve performance with lower magnitude signals (that are hard to see in 
+                                    in short temporal baseline ifgs).  
+                                    e.g. for 3 interferogams between 4 acquisitions: a1__i1__a2__i2__a3__i3__a4
+                                    This option would also make: a1__i4__a3, a1__i5__a4, a2__i6__a4
 
     Outputs:
         S_best | rank 2 array | the recovered sources as row vectors (e.g. 5 x 1230)
@@ -63,6 +69,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         2020/09/11 | MEG | Small update to allow an argument to be passed to plot_2d_interactive_fig to set the size of the inset axes.  
         2020/09/16 | MEG | Update to clarify the names of whether variables contain mixtures or soruces.  
         2021/04/13 | MEG | Update so that lons and lats are now rank2 tensors (ie matrices with a lon or lat for each pixel)
+        2021/04/13 | MEG | Add option to create_all_ifgs_from_incremental
     
     Stack overview:
         PCA_meg2                                        # do PCA
@@ -87,7 +94,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     from blind_signal_separation_funcitons import PCA_meg2
     from auxiliary_functions import  bss_components_inversion, maps_tcs_rescale, r2_to_r3, r2_arrays_to_googleEarth
     from auxiliary_functions import plot_spatial_signals, plot_temporal_signals, plot_pca_variance_line, plot_2d_interactive_fig
-    from auxiliary_functions import prepare_point_colours_for_2d, prepare_legends_for_2d
+    from auxiliary_functions import prepare_point_colours_for_2d, prepare_legends_for_2d, create_all_ifgs
 
 
     # Check inputs, unpack either spatial or temporal data, and check for nans
@@ -145,6 +152,11 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
 
     n_converge_bootstrapping = bootstrapping_param[0]                 # unpack input tuples
     n_converge_no_bootstrapping = bootstrapping_param[1]
+    
+    # -1: Possibly create all interferograms from incremental
+    if create_all_ifgs:
+        print(f"Creating all possible interferogram pairs from the incremental interferograms...", end = '')
+        _, mixtures = create_all_ifgs(mixtures)
     
     # 0: Mean centre the mixtures
     mixtures_mean = np.mean(mixtures, axis = 1)[:,np.newaxis]                                         # get the mean for each ifg (ie along rows.  )
