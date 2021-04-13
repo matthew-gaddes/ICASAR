@@ -157,6 +157,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     if create_all_ifgs:
         print(f"Creating all possible interferogram pairs from the incremental interferograms...", end = '')
         _, mixtures = create_all_ifgs(mixtures)
+        print("Done!")
     
     # 0: Mean centre the mixtures
     mixtures_mean = np.mean(mixtures, axis = 1)[:,np.newaxis]                                         # get the mean for each ifg (ie along rows.  )
