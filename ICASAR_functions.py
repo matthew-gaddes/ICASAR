@@ -9,8 +9,7 @@ Created on Tue May 29 11:23:10 2018
 
 def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window", 
            bootstrapping_param = (200,0), ica_param = (1e-4, 150), tsne_param = (30,12), hdbscan_param = (35,10),
-           lons = None, lats = None, ge_kmz = True, out_folder = './ICASAR_results/',
-           ica_verbose = 'long', inset_axes_side = {'x':0.1, 'y':0.1}, create_all_ifgs = False):
+           out_folder = './ICASAR_results/', ica_verbose = 'long', inset_axes_side = {'x':0.1, 'y':0.1}, create_all_ifgs_flag = False):
     """
     Perform ICASAR, which is a robust way of applying sICA to data.  As PCA is also performed as part of this,
     the sources and time courses found by PCA are also returned.  Note that this can be run with eitehr 1d data (e.g. time series for a GPS station),
@@ -24,6 +23,11 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     Inputs:
         n_comp | int | Number of ocmponents that are retained from PCA and used as the input for ICA.  
         spatial_data | dict or None | contains 'mixtures_r2' in which the images are stored as row vectors and 'mask', which converts a row vector back to a masked array
+                                       Optional:
+                                           lons | rank 2 array | lons of each pixel in the image.  Changed to rank 2 in version 2.0, from rank 1 in version 1.0  .  If supplied, ICs will be geocoded as kmz.  
+                                           lats | rank 2 array | lats of each pixel in the image. Changed to rank 2 in version 2.0, from rank 1 in version 1.0
+                                           dem | rank 2 array | height in metres of each pixel in the image.  If supplied, IC vs dem plots will be produced.  
+                                           ifg_dates | list | dates of the interferograms in the form YYYYMMDD_YYYYMMDD.  If supplied, IC strength vs temporal baseline plots will be produced.  
         temporal_data | dict or None | contains 'mixtures_r2' as time signals as row vectors and 'xvals' which are the times for each item in the time signals.   
         figures | string,  "window" / "png" / "none" / "png+window" | controls if figures are produced, noet none is the string none, not the NoneType None
         
@@ -32,15 +36,14 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         hdbscan_param  | tuple | Used to control the clustering (min_cluster_size, min_samples)
         tsne_param     | tuple | Used to control the 2d manifold learning  (perplexity, early_exaggeration)
         
-        lons | rank 2 array | lons of each pixel in the image.  Changed to rank 2 in version 2.0, from rank 1 in version 1.0  
-        lats | rank 2 array | lats of each pixel in theimage. Changed to rank 2 in version 2.0, from rank 1 in version 1.0
-        ge_kmz | Boolean | If Ture and lons and lats are provided, a .kmz of the ICs is produced for viewing in GoogleEarth
-        out_folder | string | if desired, can set the name of the folder results are saved to
+        
+
+        out_folder | string | if desired, can set the name of the folder results are saved to.  Should end with a /
         
         ica_verbose | 'long' or 'short' | if long, full details of ICA runs are given.  If short, only the overall progress 
         inset_axes_side | dict | inset axes side length as a fraction of the full figure, in x and y direction in the 2d figure of clustering results.  
         
-        create_all_ifgs | boolean | If spatial_data contains incremental ifgs (i.e. the daisy chain), these can be recombined to create interferograms 
+        create_all_ifgs_flag | boolean | If spatial_data contains incremental ifgs (i.e. the daisy chain), these can be recombined to create interferograms 
                                     between all possible acquisitions to improve performance with lower magnitude signals (that are hard to see in 
                                     in short temporal baseline ifgs).  
                                     e.g. for 3 interferogams between 4 acquisitions: a1__i1__a2__i2__a3__i3__a4
@@ -84,17 +87,21 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         component_plot                                  # with ICASAR sources
         r2_arrays_to_googleEarth                        # geocode spatial sources and make a .kmz for use with Google Earth.  
     """
+    
     # external functions
     import numpy as np
+    import numpy.ma as ma  
     import matplotlib.pyplot as plt
     import shutil                                                                # used to make/remove folders etc
     import os                                                                    # ditto
     import pickle                                                                # to save outputs.  
+    from pathlib import Path
     # internal functions    
     from blind_signal_separation_funcitons import PCA_meg2
     from auxiliary_functions import  bss_components_inversion, maps_tcs_rescale, r2_to_r3, r2_arrays_to_googleEarth
-    from auxiliary_functions import plot_spatial_signals, plot_temporal_signals, plot_pca_variance_line, plot_2d_interactive_fig
-    from auxiliary_functions import prepare_point_colours_for_2d, prepare_legends_for_2d, create_all_ifgs
+    from auxiliary_functions import plot_spatial_signals, plot_temporal_signals, plot_pca_variance_line
+    from auxiliary_functions import prepare_point_colours_for_2d, prepare_legends_for_2d, create_all_ifgs, signals_to_master_signal_comparison, plot_source_tc_correlations
+    from auxiliary_functions_from_other_repos import plot_2d_interactive_fig, baseline_from_names, update_mask_sources_ifgs
 
 
     # Check inputs, unpack either spatial or temporal data, and check for nans
@@ -102,10 +109,14 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         raise Exception("One of either spatial or temporal data must be supplied.  Exiting.  ")
     if temporal_data is not None and spatial_data is not None:
         raise Exception("Only either spatial or temporal data can be supplied, but not both.  Exiting.  ")
-    
+      
     if spatial_data is not None:
         mixtures = spatial_data['mixtures_r2']
         mask = spatial_data['mask']
+        if 'ifg_dates' in spatial_data:                                                             # dates the ifgs span is optional.  
+            ifg_dates = spatial_data['ifg_dates']
+        else:
+            ifg_dates = None                                                                        # set to None if there are none.  
         spatial = True
     else:
         mixtures = temporal_data['mixtures_r2']
@@ -113,8 +124,11 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         spatial = False
     if np.max(np.isnan(mixtures)):
         raise Exception("Unable to proceed as the data ('phUnw') contains Nans.  ")
-    
+                        
     # sort out various things for figures, and check input is of the correct form
+    if type(out_folder) == str:
+        print(f"Trying to conver the 'out_folder' arg which is a string to a pathlib Path.  ")
+        out_folder = Path(out_folder)
     fig_kwargs = {"figures" : figures}
     if figures == "png" or figures == "png+window":                                                         # if figures will be png, make 
         fig_kwargs['png_path'] = out_folder                                                                  # this will be passed to various figure plotting functions
@@ -131,10 +145,30 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         print(f"'ica_verbose should be either 'long' or 'short'.  Setting to 'short' and continuing.  ")
         ica_verbose = 'short'
         fastica_verbose = False
-         
-    if (len(lons.shape) != 2) or (len(lats.shape) != 2):
-        raise Exception(f"'lons' and 'lats' should be rank 2 tensors (i.e. matrices with a lon or lat for each pixel in the interferogram.  Exiting...  ")
-        
+
+    
+    if spatial_data is not None:                                                                                      # if we're working with spatial data, we should check lons and lats as they determine if the ICs will be geocoded.  
+        if ('lons' in spatial_data) and ('lats' in spatial_data):                                                       # 
+            print(f"As 'lons' and 'lats' have been provided, the ICs will be geocoded.  ")
+            if (len(spatial_data['lons'].shape) != 2) or (len(spatial_data['lats'].shape) != 2):
+                raise Exception(f"'lons' and 'lats' should be rank 2 tensors (i.e. matrices with a lon or lat for each pixel in the interferogram.  Exiting...  ")
+            ge_kmz = True
+        elif ('lons' in spatial_data) and ('lats' not in spatial_data):
+            raise Exception(f"Either both or neither of 'lons' and 'lats' should be provided, but only 'lons' was.  Exiting...  ")
+        elif ('lons' not in spatial_data) and ('lats' in spatial_data):
+            raise Exception(f"Either both or neither of 'lons' and 'lats' should be provided, but only 'lats' was.  Exiting...  ")
+        else:
+            ge_kmz = False
+    else:
+        ge_kmz = False                                                                                              # if there's no spatial data, assume that we must be working with temporal.  
+            
+    
+    if spatial_data is not None:                                                                                      # if we're working with spatial data, we should check the ifgs and acq dates are the correct lengths as these are easy to confuse.  
+        if ifg_dates is not None:
+            n_ifgs = spatial_data['mixtures_r2'].shape[0]                                                               # get the number of incremental ifgs
+            if n_ifgs != len(spatial_data['ifg_dates']):                                                                # and check it's equal to the list of ifg dates (YYYYMMDD_YYYYMMDD)
+                raise Exception(f"There should be an equal number of incremental interferogram and dates (in the form YYYYMMDD_YYYYMMDD), but they appear to be different.  Exiting...")
+
         
     # create a folder that will be used for outputs
     try:
@@ -153,18 +187,22 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     n_converge_bootstrapping = bootstrapping_param[0]                 # unpack input tuples
     n_converge_no_bootstrapping = bootstrapping_param[1]
     
+    
+
     # -1: Possibly create all interferograms from incremental
-    if create_all_ifgs:
+    if create_all_ifgs_flag:
         print(f"Creating all possible interferogram pairs from the incremental interferograms...", end = '')
-        _, mixtures = create_all_ifgs(mixtures)
-        print("Done!")
+        _, mixtures, ifg_dates = create_all_ifgs(mixtures, spatial_data['ifg_dates'])                               # if ifg_dates is None, None is also returned.  
+        print(" Done!")
+    if (spatial) and (ifg_dates is not None):
+        temporal_baselines = baseline_from_names(ifg_dates)
     
     # 0: Mean centre the mixtures
     mixtures_mean = np.mean(mixtures, axis = 1)[:,np.newaxis]                                         # get the mean for each ifg (ie along rows.  )
     mixtures_mc = mixtures - mixtures_mean                                                           # mean centre the data (along rows)
     n_mixtures = np.size(mixtures_mc, axis = 0)     
        
-    # 1: do sPCA once
+    # 1: do sPCA once (and possibly create a figure of the PCA sources)
     print('Performing PCA to whiten the data....', end = "")
     PC_vecs, PC_vals, PC_whiten_mat, PC_dewhiten_mat, x_mc, x_decorrelate, x_white = PCA_meg2(mixtures_mc, verbose = False)    
     if spatial:
@@ -181,7 +219,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
             plot_temporal_signals(x_decorrelate_rs, '02_PCA_sources', **fig_kwargs)
     print('Done!')
    
-  
+      
     # 2: do ICA multiple times   
     # First with bootstrapping
     A_hist_BS = []                                                                                      # ditto but with bootstrapping
@@ -191,8 +229,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     if ica_verbose == 'short' and n_converge_bootstrapping > 0:                                 # if we're only doing short version of verbose, and will be doing bootstrapping
         print(f"FastICA progress with bootstrapping: ", end = '')
     while n_ica_converge < n_converge_bootstrapping:
-
-        S, A, ica_converged = bootstrap_ICA(mixtures_mc, n_comp, bootstrap = True, ica_param = ica_param, verbose = fastica_verbose)
+        S, A, ica_converged = bootstrap_ICA(mixtures_mc, n_comp, bootstrap = True, ica_param = ica_param, verbose = fastica_verbose)                # note that this will perform PCA on the bootstrapped samples, so can be slow.  
         if ica_converged:
             n_ica_converge += 1
             A_hist_BS.append(A)                                     # record results
@@ -213,7 +250,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         print(f"FastICA progress without bootstrapping: ", end = '')
     while n_ica_converge < n_converge_no_bootstrapping:
         S, A, ica_converged = bootstrap_ICA(mixtures_mc, n_comp, bootstrap = False, ica_param = ica_param,
-                                            X_whitened = x_white, dewhiten_matrix = PC_whiten_mat, verbose = fastica_verbose)
+                                            X_whitened = x_white, dewhiten_matrix = PC_whiten_mat, verbose = fastica_verbose)               # no bootstrapping, so PCA doesn't need to be run each time and we can pass it the whitened data.  
         
         if ica_converged:
             n_ica_converge += 1
@@ -241,33 +278,29 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
                         
        
     # 4: Do clustering and 2d manifold representation, plus get centrotypes of clusters, and make an interactive plot.   
-    S_best, labels_hdbscan, xy_tsne, clusters_by_max_Iq_no_noise, Iq  = bootstrapped_sources_to_centrotypes(sources_all_r2,  hdbscan_param, tsne_param, 
-                                                                                                            (n_converge_bootstrapping, n_comp))                 # clusters_by_max_Iq_no_noise is an array of which cluster number is best (ie has the highest Iq)
-
-    labels_colours = prepare_point_colours_for_2d(labels_hdbscan, clusters_by_max_Iq_no_noise)                                          # make a list of colours so that each point with the same label has the same colour, and all noise points are grey
+    S_best, labels_hdbscan, xy_tsne, clusters_by_max_Iq_no_noise, Iq  = bootstrapped_sources_to_centrotypes(sources_all_r2, hdbscan_param, tsne_param)        # do the clustering and project to a 2d plane.  clusters_by_max_Iq_no_noise is an array of which cluster number is best (ie has the highest Iq)
+    labels_colours = prepare_point_colours_for_2d(labels_hdbscan, clusters_by_max_Iq_no_noise)                                                                # make a list of colours so that each point with the same label has the same colour, and all noise points are grey
     legend_dict = prepare_legends_for_2d(clusters_by_max_Iq_no_noise, Iq)    
     marker_dict = {'labels' : np.ravel(np.hstack((np.zeros((1, n_comp*n_converge_bootstrapping)), np.ones((1, n_comp*n_converge_no_bootstrapping)))))}        # boostrapped are labelled as 0, and non bootstrapped as 1
-    if n_converge_bootstrapping == 0:
-        marker_dict['styles'] = ['x']                                                                                                           # if there are no bootstrapping, only non bootstrapped
-    elif n_converge_no_bootstrapping == 0:
-        marker_dict['styles'] = ['o']                                                                                                           # if there are no non bootstrapping, only bootstrapped
-    else:
-        marker_dict['styles'] = ['o', 'x']                                                                                                      # or both
+    marker_dict['styles'] = ['o', 'x']                                                                                                                        # bootstrapped are 'o's, and non-bootstrapped are 'x's
        
     plot_2d_labels = {'title' : '03_clustering_and_manifold_results',
                       'xlabel' : 'TSNE dimension 1',
                       'ylabel' : 'TSNE dimension 2'}
+        
     if spatial:
         plot_2d_labels['title']
-        spatial_data = {'images_r3' : sources_all_r3}                                                       # spatial data stored in rank 3 format (ie n_imaces x height x width)
-        plot_2d_interactive_fig(xy_tsne.T, colours = labels_colours, spatial_data = spatial_data,                 # make the 2d interactive plot
-                                labels = plot_2d_labels, legend = legend_dict, markers = marker_dict, inset_axes_side = inset_axes_side)
+        spatial_data_S_all = {'images_r3' : sources_all_r3}                                                                                            # spatial data stored in rank 3 format (ie n_imaces x height x width)
+        plot_2d_interactive_fig(xy_tsne.T, colours = labels_colours, spatial_data = spatial_data_S_all,                                                # make the 2d interactive plot
+                                labels = plot_2d_labels, legend = legend_dict, markers = marker_dict, inset_axes_side = inset_axes_side,
+                                fig_filename = '03_clustering_and_manifold_results', **fig_kwargs)
     
     else:
         temporal_data_S_all = {'tcs_r2' : sources_all_r2,
-                               'xvals'  : temporal_data['xvals'] }                                          # make a dictionary of the sources recovered from each run
-        plot_2d_interactive_fig(xy_tsne.T, colours = labels_colours, temporal_data = temporal_data_S_all,         # make the 2d interactive plot
-                                labels = plot_2d_labels, legend = legend_dict, markers = marker_dict, inset_axes_side = inset_axes_side)
+                               'xvals'  : temporal_data['xvals'] }                                                                               # make a dictionary of the sources recovered from each run
+        plot_2d_interactive_fig(xy_tsne.T, colours = labels_colours, temporal_data = temporal_data_S_all,                                        # make the 2d interactive plot
+                                labels = plot_2d_labels, legend = legend_dict, markers = marker_dict, inset_axes_side = inset_axes_side,
+                                fig_filename = '03_clustering_and_manifold_results', **fig_kwargs)
 
     Iq_sorted = np.sort(Iq)[::-1]               
     n_clusters = S_best.shape[0]                                                                     # the number of sources/centrotypes is equal to the number of clusters    
@@ -289,21 +322,41 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         else:
             plot_temporal_signals(S_best, '04_ICASAR_sources', **fig_kwargs)
         
-    # 7: Possibly geocode the recovered sources and make a Google Earth file.  
-    #import pdb; pdb.set_trace()
-    from auxiliary_functions import r2_arrays_to_googleEarth
+    # 7: Possibly geocode the recovered sources and make a Google Earth file.     
+    if ge_kmz:
+        print('Creating a Google Earth .kmz of the geocoded independent components... ', end = '')
+        S_best_r3 = r2_to_r3(S_best, mask)
+        r2_arrays_to_googleEarth(S_best_r3, spatial_data['lons'], spatial_data['lats'], 'IC', out_folder = out_folder)                              # note that lons and lats should be rank 2 (ie an entry for each pixel in the ifgs)
+        print('Done!')
     
-    if spatial:
-        if ge_kmz and (lons is not None) and (lats is not None):
-            print('Creating a Google Earth .kmz of the geocoded independent components... ', end = '')
-            S_best_r3 = r2_to_r3(S_best, mask)
-            r2_arrays_to_googleEarth(S_best_r3, lons, lats, 'IC', out_folder = out_folder)                              # note that lons and lats should be rank 2 (ie an entry for each pixel in the ifgs)
-            print('Done!')
-               
-    # 8: Save the results: 
+
+    # 8: Calculate the correlations between the DEM and the ICs 
+    if (spatial_data is not None) and ('dem' in spatial_data) :                                                                                      # if we're working with spatial data, we should check the ifgs and acq dates are the correct lengths as these are easy to confuse.  
+        dem_ma = ma.masked_invalid(spatial_data['dem'])                                                                                                             # LiCSBAS dem uses nans, but lets switch to a masked array (with nans masked)
+        dem_new_mask, S_best_new_mask, mask_both = update_mask_sources_ifgs(spatial_data['mask'], S_best, ma.getmask(dem_ma), ma.compressed(dem_ma)[np.newaxis,:])  # Odly, the masked DEM is not the same as the masked ifgs, so find pixels we have value for both of
+        ic_dem_comparisons = {}
+        dem_to_ic_comparisons = signals_to_master_signal_comparison(S_best_new_mask, dem_new_mask, density = True)                                                  # And then we can do kernel density plots for each IC and the DEM
+    else:
+        dem_to_ic_comparisons = None
+        dem_ma = None
+    
+    # 9: Calculate the correlations between the temporal baselines and timecourses 
+    if (spatial_data is not None) and ('temporal_baselines' in locals()) :                                                                                      # if we're working with spatial data, we should check the ifgs and acq dates are the correct lengths as these are easy to confuse.  
+        tcs_to_tempbaselines_comparisons = signals_to_master_signal_comparison(tcs.T, np.asarray(temporal_baselines)[np.newaxis,:], density = True)               # And then we can do kernel density plots for each IC and the DEM
+    else:
+        tcs_to_tempbaselines_comparisons = None
+  
+    # 10: Plot the results of the two correlations.  
+    if (spatial_data is not None):
+        if ('dem' in spatial_data) or ('temporal_baselines' in locals()):                                                                   # at least one of the two things we make comparisons against must exist for it to be worth plotting the figure.  
+            plot_source_tc_correlations(S_best, mask, dem_ma, dem_to_ic_comparisons, tcs_to_tempbaselines_comparisons, **fig_kwargs)
+ 
+    
+
+    # 11: Save the results: 
     print('Saving the key results as a .pkl file... ', end = '')                                            # note that we don't save S_all_info as it's a huge file.  
     if spatial:
-        with open(f'{out_folder}ICASAR_results.pkl', 'wb') as f:
+        with open(out_folder / 'ICASAR_results.pkl', 'wb') as f:
             pickle.dump(S_best, f)
             pickle.dump(mask, f)
             pickle.dump(tcs, f)
@@ -313,7 +366,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         f.close()
         print("Done!")
     else:                                                                       # if temporal data, no mask to save
-        with open(f'{out_folder}ICASAR_results.pkl', 'wb') as f:
+        with open(out_folder / 'ICASAR_results.pkl', 'wb') as f:
             pickle.dump(S_best, f)
             pickle.dump(tcs, f)
             pickle.dump(source_residuals, f)
@@ -331,18 +384,12 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
 
 #%%
 
-def bootstrapped_sources_to_centrotypes(sources_r2, hdbscan_param, tsne_param, 
-                                        bootstrap_settings, figures = "window", png_path='./'):
+def bootstrapped_sources_to_centrotypes(sources_r2, hdbscan_param, tsne_param):
     """ Given the products of the bootstrapping, run the 2d manifold and clustering algorithms to create centrotypes.  
     Inputs:
         mixtures_r2 | rank 2 array | all the sources recovered after bootstrapping.  If 5 components and 100 bootstrapped runs, this will be 500 x n_pixels (or n_times)
         hdbscan_param  | tuple | Used to control the clustering (min_cluster_size, min_samples)
         tsne_param     | tuple | Used to control the 2d manifold learning  (perplexity, early_exaggeration)
-        bootstrap_settings | tuple | (number of bootsrapped runs, number components recovered in each run), e.g. (40,6) would mean that the first 40x6 recovered soruces came from bootsrapped
-                                        runs, whilst the remainder (?, 6) came from non-bootstrapped runs.  Note that the number of componnets recovered is the same for both bootstrapped
-                                        and non bootstrapped.  
-        figures | string,  "window" / "png" / "png+window" | controls if figures are produced (either as a window, saved as a png, or both)
-        png_path | string | if a png is to be saved, a path to a folder can be supplied, or left as default to write to current directory.  
     Returns:
         S_best | rank 2 array | the recovered sources as row vectors (e.g. 5 x 1230)
         labels_hdbscan | rank 2 array | the cluster number for each of the sources in sources_all_r2 e.g 1000,
@@ -352,18 +399,11 @@ def bootstrapped_sources_to_centrotypes(sources_r2, hdbscan_param, tsne_param,
 
     History:
         2020/08/26 | MEG | Created from a script.  
+        2021_04_16 | MEG | Remove unused figure arguments.  
     """
     import numpy as np
     import hdbscan                                                               # used for clustering
     from sklearn.manifold import TSNE                                            # t-distributed stochastic neighbour embedding
-
-    fig_kwargs = {"figures" : figures}
-    if figures == "png" or figures == "png+window":                                                         # if figures will be png, make 
-        fig_kwargs['png_path'] = png_path                                                                  # this will be passed to various figure plotting functions
-    elif figures == 'window' or figures == 'none':
-        pass
-    else:
-        raise ValueError("'figures' should be 'window', 'png', 'png+window', or 'None'.  Exiting...")
 
     
     perplexity = tsne_param[0]                                                   # unpack tuples
@@ -404,8 +444,7 @@ def bootstrapped_sources_to_centrotypes(sources_r2, hdbscan_param, tsne_param,
         
     if n_clusters == 0:
         print("No clusters have been found.  Often, this is caused by running the FastICA algorithm too few times, or setting"
-              "the hdbscan_param 'min_cluster_size' too low.  ")
-       
+              "the hdbscan_param 'min_cluster_size' too high.  ")
         return None, labels_hdbscan, xy_tsne, clusters_by_max_Iq_no_noise, Iq
     
     else:
@@ -417,7 +456,7 @@ def bootstrapped_sources_to_centrotypes(sources_r2, hdbscan_param, tsne_param,
             S_this_cluster = np.copy(S[source_index, :][:, source_index])                           # similarities for just this cluster
             in_cluster_arg = np.argmax(np.sum(S_this_cluster, axis = 1))                            # the sum of a column of S_this... is the similarity between 1 source and all the others.  Look for the column that's the maximum
             S_best_args[i,0] = source_index[in_cluster_arg]                                         # conver the number in the cluster to the number overall (ie 2nd in cluster is actually 120th source)     
-        S_best = np.copy(sources_r2[np.ravel(S_best_args),:])                                   # these are the centrotype sources
+        S_best = np.copy(sources_r2[np.ravel(S_best_args),:])                                       # these are the centrotype sources
     
         return S_best, labels_hdbscan, xy_tsne, clusters_by_max_Iq_no_noise, Iq
 
@@ -598,251 +637,5 @@ def cluster_quality_index(labels, S):
             Iq_temp = np.nanmean(S_intra) - np.mean(S_inter)                                         # Iq is the difference between the mean of the distances inside the cluster, and the mean distance between items in the cluster and out of the cluster
         Iq.append(Iq_temp)                                                                          # append whichever value of Iq (np.nan or a numeric value)
     return Iq
-
-#%% Superseeded
-
-# def plot_cluster_results(labels, xy, sources_r2, sources_r3,
-#                          interactive = False, order = None, Iq = None, hull = True, set_zoom = 0.2, 
-#                          title = "2d manifold of sources", bootstrap_settings = None, figures = 'window', png_path = './'): 
-#     """
-#      A function to plot clustering results in 2d.  Interactive as hovering over a point reveals the source that it corresponds to.  
-#     Only the distance between each point (D) is important, and not the exact x or y position.  
-        
-#     !!!!!Bootstrapped first, non-bootstrapped second in sources_r2 and sources_r3 !!!!!
-    
-#     Inputs:
-#         labels | cluster label for each point. Clusters of (-1) are interpreted as noise and coloured grey.  If None, plots without labels (so all points are the same colour)
-#         xy | many x 2 | xy and coordinates for the points. ie the output of the TSNE manifold.  
-#         sources_r2 | rank 2 array | n_images x n_pixels (or n_times)             Doesn't support masked arrays.  
-#         sources_r3 | rank 3 array | n_images x image rows * image columns             Doesn't support masked arrays.  Not needed if working with 1d data.  
-#         interactive | boolean | if True, hovering over point shows the source, if False, doesn't.  
-#         order | none or rank 1 array | the order to plot the clusters in (ie usually plot the best (eg highest Iq) first)
-#         hull | boolean | If True, draw convex hulls around the clusters (with more than 3 points in them, as it's only a line for clusters of 2 points)
-#         set_zoom | flt | set the size of the interactive images of the source that pop up.  
-#         title | string | if supplied, applied to the figure and figure window
-#         bootstrap_settings | tuple | (number of bootsrapped runs, number components recovered in each run), e.g. (40,6) would mean that the first 40x6 recovered soruces came from bootsrapped
-#                                         runs, whilst the remainder (?, 6) came from non-bootstrapped runs.  Note that the number of componnets recovered is the same for both bootstrapped
-#                                         and non bootstrapped.  
-#         figures | string,  "window" / "png" / "png+window" | controls if figures are produced (either as a window, saved as a png, or both)
-#         png_path | string | if a png is to be saved, a path to a folder can be supplied, or left as default to write to current directory.  
-        
-        
-    
-#     The interactive part was modified from:
-#     https://stackoverflow.com/questions/42867400/python-show-image-upon-hovering-over-a-point
-    
-#     2018/06/18 | MEG: written 
-#     2018/06/19 | MEG: update the hover function so can deal with two points very close together.  
-#     2018/06/19 | MEG: choose between two manifolds, and choose whether interactive or not.  
-#     2018/06/27 | MEG: labels of (-1) are noise, and are coloured grey automatically.  
-#     2018/06/27 | MEG: Unique colours for plots with more than 10 clusters, and the possibility of expanded legends to show more possible colours
-#     2018/06/28 | MEG: Add the option for no labels to be provided and all the points to be the same colour
-#     2018/06/29 | MEG: Add option to plot both bootrapped and non-bootstrapped samples on the same plot with a different marker style.  
-#     2020/03/03 | MEG | Add option to set the path of the png saved.  
-#     2020/09/28 | MEG | Remove TSNE settings from inside function (xy position of each point must be given) and tidy up several areas.  
-    
-    
-#     """    
-
-#     import numpy as np
-#     import matplotlib.pyplot as plt
-#     from matplotlib.offsetbox import OffsetImage, AnnotationBbox
-#     from matplotlib.lines import Line2D                                  # for the manual legend
-#     from scipy.spatial import ConvexHull
-#     import random                                                        # for generating random colours
-#     r = lambda: random.randint(0,255)                                   # lambda function for random integers for colours
-
-#     def hover(event):
-#         if line_BS.contains(event)[0]:                             # False if cursor isn't over point, True if is
-#             ind = line_BS.contains(event)[1]["ind"]               # find out the index within the array from the event
-#             if np.size(ind) == 1:                               # if only hovering over one point, convert from array to integer
-#                 ind =  ind[0]                                    # array to integer conversion
-#             else:                                               # if hovering over multiple points, pick one to show
-#                 index = np.random.randint(0, np.size(ind), 1)   # of the multiple points, pick one to show at random
-#                 ind = ind[index]                                # index of random point
-#                 ind = ind[0]                                    # array to integer conversion
-#             #print(f'Displaying source {ind}.')
-#             w,h = fig.get_size_inches()*fig.dpi                 # get the figure size
-#             ws = (event.x > w/2.)*-1 + (event.x <= w/2.)        # ?
-#             hs = (event.y > h/2.)*-1 + (event.y <= h/2.)
-#             ab.xybox = (xybox[0]*ws, xybox[1]*hs)               # if event occurs in the top or right quadrant of the figure, change the annotation box position relative to mouse
-#             ab.set_visible(True)                                # make annotation box visible
-#             ab.xy =(x[ind], y[ind])                             # place it at the position of the hovered scatter point
-#             im.set_data(sources_r3[ind,:,:])                           # set the image corresponding to that point
-        
-#         elif line_no_BS.contains(event)[0]:                             # False if cursor isn't over point, True if is
-#             ind = line_no_BS.contains(event)[1]["ind"]                   # find out the index within the array from the event
-#             if np.size(ind) == 1:                                        # if only hovering over one point, convert from array to integer
-#                 ind =  n_BS + ind[0]                                     # array to integer conversion
-#             else:                                                        # if hovering over multiple points, pick one to show
-#                 index = np.random.randint(0, np.size(ind), 1)            # of the multiple points, pick one to show at random
-#                 ind = ind[index]                                         # index of random point
-#                 ind = n_BS + ind[0]                                    # array to integer conversion
-#             #print(f'Displaying source {ind}.')
-#             w,h = fig.get_size_inches()*fig.dpi                 # get the figure size
-#             ws = (event.x > w/2.)*-1 + (event.x <= w/2.)        # ?
-#             hs = (event.y > h/2.)*-1 + (event.y <= h/2.)
-#             ab.xybox = (xybox[0]*ws, xybox[1]*hs)               # if event occurs in the top or right quadrant of the figure, change the annotation box position relative to mouse
-#             ab.set_visible(True)                                # make annotation box visible
-#             ab.xy =(x[ind], y[ind])                             # place it at the position of the hovered scatter point
-#             im.set_data(sources_r3[ind,:,:])                           # set the image corresponding to that point
-        
-#         else:
-#             #if the mouse is not over a scatter point
-#             ab.set_visible(False)
-#         fig.canvas.draw_idle()
-
-       
-#     # 0/6: set some parameters
-#     if labels is None:    
-#         try:
-#             n_sources_total = np.size(sources_r3, axis = 0)
-#         except:
-#             raise Exception("Can't work out how many sources were recovered.  Either labels (labels), a pairwise distance matrix (D), or the sources themselves (images_r3) need to be provided.  ")
-#         labels = np.zeros(n_sources_total, dtype = 'int64')
-#     n_sources_total = len(labels)                   
-#     n_clusters = len(np.unique(labels))
-
-#     if bootstrap_settings is None:
-#         n_BS = n_sources_total
-#         n_no_BS = 0
-#     else:
-#         n_BS = bootstrap_settings[0]                         # the number of bootstrapped runs
-#         n_comp = bootstrap_settings[1]                       # the number of components sought in each run
-#         n_BS = n_comp * n_BS                                    # the number of recovered sources that came from bootstrapped runs
-#         n_no_BS = (n_comp * n_sources_total) - n_BS             # the number of recovered sources that came from  non-bootstrapped runs
-  
-#     if np.min(labels) == (-1):                                          # if some are labelled as cluster -1, these points are noise and not a member of any cluster (by convention)
-#         print('Data labelled as noise will be plotted in grey.')
-#         noise = True                                                    # a flag to easily record that we have noise
-#         n_clusters -=1                                                  # noise doesn't count as a cluster
-#     else:
-#         noise = False
-
-#     if order is None:                                                               # if no order, plot 1st cluster first, etc. 
-#         order = np.arange(n_clusters)
-    
-
-
-#     # 1/6: xy positions for points need to be calculated if not provided
-#     x = xy[:,0]                                                            # split x and y into seperate variables
-#     y = xy[:,1]
-
-
-
-
-#     # 2/6: set the colours and marker style for each data point depending on which cluster they are in
-#     colours = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']   # the standard nice colours
-#     if n_clusters > 10:                                                 # if we have more than 10 clsuters, generate some random colours
-#         for i in range(n_clusters - 10):                                # how many more colours we need
-#             colours.append(('#%02X%02X%02X' % (r(),r(),r())))           # generate them with r, a lambda fucntion
-        
-#     colours = colours[:n_clusters]                                      # crop to length
-#     colours2 = []                                                       # new list of colours, 1st item is the colour that label 0 should be
-#     for i in range(n_clusters):
-#         colours2.append(colours[int(np.argwhere(order == i))])          # populate the list
-#     labels_chosen_colours = []                                           # initiate a list where instead of label for each source, we have its colour
-#     for one_label in(labels):                                            # convert labels to clsuter colours
-#         if one_label == (-1):                                           # if noise, 
-#             labels_chosen_colours.append('#c9c9c9')                     # colour is grey
-#         else:
-#             labels_chosen_colours.append(colours2[one_label])           # otherwise, the correct colour (nb colours 2 are reordered so the most imporant clusters have the usual blue etc. colours)
-    
-# #    marker_BS = ['o']                                                   # set the marker style
-# #    marker_no_BS = ['v']
-# #    markers_all = n_BS * marker_BS + n_no_BS * marker_no_BS             # a simple list of hte marker style for each point 
-    
-    
-#     # 3/6: create figure and plot scatter
-#     fig = plt.figure()
-#     if title is None:                                                   # if an argument was given for the title
-#         fig.canvas.set_window_title(f'2d cluster representation')
-#     else:
-#         fig.canvas.set_window_title(title)
-#         fig.suptitle(title)
-#     ax = fig.add_subplot(111)
-#     ax.set_xlabel('Distance 1')
-#     ax.set_ylabel('Distance 2')
-#     if bootstrap_settings is not None:
-#         ax.set_title("'o': bootstrapped data, 'x': non-bootstrapped data")
-    
-#     line_BS = ax.scatter(x[:n_BS],y[:n_BS], s = 14,  marker = 'o', c = labels_chosen_colours[:n_BS])           # plot the points
-    
-#     #line_no_BS = ax.scatter(x[n_BS : (n_BS+n_no_BS)],y[n_BS : (n_BS+n_no_BS)], s= 14, marker = 'x', c = labels_chosen_colours[n_BS : (n_BS+n_no_BS)])           # plot the points
-#     if n_no_BS == 0:                                                                # if we don't have any non bootstrapped points, plot without a colour list (can't have an empty list of colours even if no points in python 3)
-#         line_no_BS = ax.scatter(x[n_BS:],y[n_BS:], s= 14, marker = 'x')           # plot the (empty)
-#     else:
-#         line_no_BS = ax.scatter(x[n_BS:],y[n_BS:], s= 14, marker = 'x', c = labels_chosen_colours[n_BS:])           # if we do have some non-bootstrapped points, plot them
-    
-        
-#     # 4/6: draw the convex hulls, if required
-#     if hull:
-#         for i in range(n_clusters):                                                     # add the hulls around the points in each cluster
-#             to_plot = np.argwhere(labels == i)
-#             xy2_1_cluster = xy[np.ravel(to_plot), :]                                   # get just the 2d data for each cluster that we're looping through
-#             if np.size(xy2_1_cluster, axis = 0) > 2:                           # only draw convex hulls around the points if we're asked to, and if they have 3 or more points (will fail for clusters of less than 3 points. )
-#                 hull = ConvexHull(xy2_1_cluster)                                            # a hull around the points in a certain cluster
-#                 for simplex in hull.simplices:                                              # loop through each vertice
-#                     ax.plot(xy2_1_cluster[simplex, 0], xy2_1_cluster[simplex,1], 'k-')      # and pllot
-        
-    
-#     # 5/6: legend on the left side
-#     legend_elements = [Line2D([0], [0], marker='o', color='w', markerfacecolor='#1f77b4'), 
-#                        Line2D([0], [0], marker='o', color='w', markerfacecolor='#ff7f0e'), 
-#                        Line2D([0], [0], marker='o', color='w', markerfacecolor='#2ca02c'), 
-#                        Line2D([0], [0], marker='o', color='w', markerfacecolor='#d62728'), 
-#                        Line2D([0], [0], marker='o', color='w', markerfacecolor='#9467bd'), 
-#                        Line2D([0], [0], marker='o', color='w', markerfacecolor='#8c564b'), 
-#                        Line2D([0], [0], marker='o', color='w', markerfacecolor='#e377c2'), 
-#                        Line2D([0], [0], marker='o', color='w', markerfacecolor='#7f7f7f'), 
-#                        Line2D([0], [0], marker='o', color='w', markerfacecolor='#bcbd22'), 
-#                        Line2D([0], [0], marker='o', color='w', markerfacecolor='#17becf')]
-#     if n_clusters > 10:                                                          # if we have more than 10 clsuters, repeat the same colours the required number of times
-#         for i in range(n_clusters-10):
-#             legend_elements.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='#%02X%02X%02X' % (r(),r(),r())))
-#     legend_elements = legend_elements[:n_clusters]                                      # crop to length
-
-#     legend_labels = []
-#     for i in order:
-#         if Iq is not None:
-#             legend_labels.append(f'Cluster: {i}\nIq: {np.round(Iq[i], 2)} ')                                   # make a list of strings to name each cluster
-#         else:
-#             legend_labels.append(f'Cluster: {i}')
-#     if noise:
-#         legend_labels.append('Noise')
-#         legend_elements.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='#c9c9c9'))              # but if we have 10 clusters (which is the max we plot), Noise must be added as the 11th
-                                          
-#     box = ax.get_position()                                                         # Shrink current axis by 20%
-#     ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])                  # cont'd
-#     ax.legend(handles = legend_elements, labels = legend_labels, loc='center left', bbox_to_anchor=(1, 0.5))                           # Put a legend to the right of the current axis
-
-
-#     # 6/6: if required, make interactive.  
-#     if interactive is True:
-#         im = OffsetImage(sources_r3[0,:,:], zoom=set_zoom)                               # create the annotations box
-#         xybox=(50., 50.)
-#         ab = AnnotationBbox(im, (0,0), xybox=xybox, xycoords='data', boxcoords="offset points",  pad=0.3,  arrowprops=dict(arrowstyle="->"))
-#         ax.add_artist(ab)               # add it to the axes 
-#         ab.set_visible(False)           # and make invisible
-#         fig.canvas.mpl_connect('motion_notify_event', hover)                    # add callback for mouse moves
-    
-    
-#     if figures == 'window':                                                                 # possibly save the output
-#         pass
-#     elif figures == "png":
-#         fig.savefig(f"{png_path}/{title}.png")
-#         plt.close()
-#     elif figures == 'png+window':
-#         fig.savefig(f"{png_path}/{title}.png")
-#     else:
-#         pass
-
-
-
-    
-
-
-
-
 
   
