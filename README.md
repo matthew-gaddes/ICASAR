@@ -43,5 +43,9 @@ If both bootsrapped and non-bootstrapped runs are done in the same step, these c
 If longitude and latitude information for the interferograms is available, the independent components that are found can be geocoded and displayed in Google Earth:
 ![ge_print](https://user-images.githubusercontent.com/10498635/84274640-02aaa200-ab28-11ea-80e1-ed5e21f26528.jpg)
 
+# April 2021 addition:
+To deal with small signals (i.e. ones that are not visible in a single 12 day Sentinel-1 interferogram), we can aid the isolation of these signals through computing all the possible interferograms between the acquisitions (i.e. to include many longer temporal baseline interferograms).  This allows for the correlations between the strength with which an IC is used for a given interferograms, and its temporal baseline.  ICs that contain deformation are likely to be used strongly in long temporal baseline interferograms.  This figure also computes the correlations between ICS and the DEM, which is useful for determining if a signal captures a topographically correlated atmospheric phase screen.  
+
+![ICs_and_correlations](https://user-images.githubusercontent.com/10498635/115881889-2034e180-a444-11eb-8eb2-4e090653413c.png)
 
 
