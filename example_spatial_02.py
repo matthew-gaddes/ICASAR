@@ -10,7 +10,7 @@ An example of the ICASAR software with real data that contains a deformation sig
 #%% Imports
 
 import numpy as np
-import matplotlib.pyplot as plt 
+import matplotlib.pyplot as plt   
 from pathlib import Path
 
 from ICASAR_functions import ICASAR
