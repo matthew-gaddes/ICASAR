@@ -172,12 +172,15 @@ def signals_to_master_signal_comparison(signals, master_signal, density = False)
             
         History:
             2021_04_22 | MEG | Written.  
+            2021_04_26 | MEG | Add check that the signals are of the same length.  
         """
         import numpy as np
         from scipy.stats import gaussian_kde
         import numpy.polynomial.polynomial as poly                                             # used for lines of best fit through dem/source plots
         
         n_signals, n_pixels = signals.shape                                                    # each signal is a row, observations of that are columns.  
+        if n_pixels != master_signal.shape[1]:
+            raise Exception(f"The signals aren't of the same length (2nd dimension), as 'signals' is {n_pixels} long, but 'master_signal' is {master_signal.shape[1]} long.  Exiting.  ")
         xyzs = []                                                                              # initiate
         line_xys = []
         cor_coefs = []
@@ -530,14 +533,14 @@ def maps_tcs_rescale(maps, tcs):
 #%%
   
     
-def bss_components_inversion(sources, interferogram):
+def bss_components_inversion(sources, interferograms):
     """
     A function to fit an interferogram using components learned by BSS, and return how strongly
     each component is required to reconstruct that interferogramm, and the 
     
     Inputs:
         sources | n_sources x pixels | ie architecture I.  Mean centered
-        interferogram | 1 x pixels | Doesn't have to be mean centered
+        interferogram | n_ifgs x pixels | Doesn't have to be mean centered
         
     Outputs:
         m | rank 1 array | the strengths with which to use each source to reconstruct the ifg.  
@@ -545,18 +548,34 @@ def bss_components_inversion(sources, interferogram):
     """
     import numpy as np
     
-    interferogram -= np.mean(interferogram)                     # mean centre
-    n_pixels = np.size(interferogram)
+    inversion_results = []
+    for interferogram in interferograms:
+        interferogram -= np.mean(interferogram)                     # mean centre
+        n_pixels = np.size(interferogram)
     
-    d = interferogram.T                                        # a column vector (p x 1)
-    g = sources.T                                              # a matrix of ICA sources and each is a column (p x n_sources)
-    m = np.linalg.inv(g.T @ g) @ g.T @ d                       # m (n_sources x 1)
-    d_hat = g@m
-    d_resid = d - d_hat
-    #mean_l2norm = np.sqrt(np.sum(d_resid**2))/n_pixels          # misfit between ifg and ifg reconstructed from sources
-    mean_l2norm = np.sqrt(np.sum(d_resid**2))/n_pixels          # misfit between ifg and ifg reconstructed from sources
     
-    return m, mean_l2norm
+        d = interferogram.T                                        # now n_pixels x n_ifgs
+        g = sources.T                                              # a matrix of ICA sources and each is a column (n_pixels x n_sources)
+        
+        ### Begin different types of inversions.  
+        #m = np.linalg.inv(g.T @ g) @ g.T @ d                       # m (n_sources x 1), least squares
+        #m = g.T @ np.linalg.inv(g @ g.T) @ d                      # m (n_sources x 1), least squares with minimum norm condition.     COULDN'T GET TO WORK.  
+        #m = np.linalg.pinv(g) @ d                                   # Moore-Penrose inverse of G for a simple inversion.  
+        u = 1e0                                                                 # bigger value favours a smoother m, which in turn can lead to a worse fit of the data.  1e3 gives smooth but bad fit, 1e1 is a compromise, 1e0 is rough but good fit.  
+        m = np.linalg.inv(g.T @ g + u*np.eye(g.shape[1])) @ g.T @ d;                # Tikhonov solution  
+        
+        
+        ### end different types of inversion
+        d_hat = g@m
+        d_resid = d - d_hat
+        mean_l2norm = np.sqrt(np.sum(d_resid**2))/n_pixels          # misfit between ifg and ifg reconstructed from sources
+        
+        inversion_results.append({'tcs'      : m,
+                                  'model'    : d_hat,
+                                  'residual' : d_resid,
+                                  'l2_norm'  : mean_l2norm})
+    
+    return inversion_results
 
 
 #%%

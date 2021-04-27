@@ -26,9 +26,11 @@ ICASAR_settings = {"n_comp" : 5,                                         # numbe
                    "bootstrapping_param" : (200, 0),                    # (number of runs with bootstrapping, number of runs without bootstrapping)                    "hdbscan_param" : (35, 10),                        # (min_cluster_size, min_samples)
                    "tsne_param" : (30, 12),                             # (perplexity, early_exaggeration)
                    "ica_param" : (1e-2, 150),                           # (tolerance, max iterations)
-                   "hdbscan_param" : (35,10),                           # (min_cluster_size, min_samples) Discussed in more detail in Mcinnes et al. (2017). min_cluster_size sets the smallest collection of points that can be considered a cluster. min_samples sets how conservative the clustering is. With larger values, more points will be considered noise. 
+#                   "hdbscan_param" : (35,10),                           # (min_cluster_size, min_samples) Discussed in more detail in Mcinnes et al. (2017). min_cluster_size sets the smallest collection of points that can be considered a cluster. min_samples sets how conservative the clustering is. With larger values, more points will be considered noise. 
+                   "hdbscan_param" : (55,10),                           # (min_cluster_size, min_samples) Discussed in more detail in Mcinnes et al. (2017). min_cluster_size sets the smallest collection of points that can be considered a cluster. min_samples sets how conservative the clustering is. With larger values, more points will be considered noise. 
                    "out_folder" : Path('example_spatial_02_outputs'),   # outputs will be saved here
                    "create_all_ifgs_flag" : True,                       # small signals are hard for ICA to extact from time series, so make it easier by creating all possible long temporal baseline ifgs from the incremental data.  
+                   "load_fastICA_results" : True,                      # If all the FastICA runs already exisit, setting this to True speeds up ICASAR as they don't need to be recomputed.  
                    "figures" : "png+window"}                            # if png, saved in a folder as .png.  If window, open as interactive matplotlib figures,
                                                                          # if 'png+window', both.  
                                                                          # default is "window" as 03_clustering_and_manifold is interactive.  
@@ -89,3 +91,87 @@ _, mixtures, ifg_dates = create_all_ifgs(spatial_data['mixtures_r2'], spatial_da
 matrix_show(time_courses)
 
 matrix_show(col_to_ma(mixtures[777,], spatial_data['mask']))
+
+#%% How well are we fitting the data
+
+# cf_data = spatial_data['mixtures_r2']
+
+# f, axes = plt.subplots(3,1)
+# matrix_show(cf_data, ax = axes[0], fig = f)
+# matrix_show(time_courses @ S_best, ax = axes[1], fig = f)
+# matrix_show(cf_data - (time_courses @ S_best), ax = axes[2], fig = f)
+
+#%%
+
+
+
+
+
+
+
+
+def visualise_ICASAR_inversion(interferograms, sources, time_courses, mask, n_data = 10):
+    """
+        2021_03_03 | MEG | Written.  
+    """
+    
+    def plot_ifg(ifg, ax, mask, vmin, vmax):
+        """
+        """
+        w = ax.imshow(col_to_ma(ifg, mask), interpolation ='none', aspect = 'equal', vmin = vmin, vmax = vmax)                                                   # 
+        axin = ax.inset_axes([0, -0.06, 1, 0.05])
+        fig.colorbar(w, cax=axin, orientation='horizontal')
+        ax.set_yticks([])
+        ax.set_xticks([])
+    
+    import matplotlib.pyplot as plt
+    
+    interferograms_mc = interferograms - np.mean(interferograms, axis = 1)[:, np.newaxis]
+    interferograms_ICASAR = time_courses @ sources
+    residual = interferograms_mc - interferograms_ICASAR
+    
+    if n_data > interferograms.shape[0]:
+        n_data = interferograms.shape[0]
+
+    
+    fig, axes = plt.subplots(3, n_data, figsize = (15,7))  
+    if n_data == 1:    
+        axes = np.atleast_2d(axes).T                                                # make 2d, and a column (not a row)
+    
+    row_labels = ['Data', 'Model', 'Resid.' ]
+    for ax, label in zip(axes[:,0], row_labels):
+        ax.set_ylabel(label)
+
+    for data_n in range(n_data):
+        vmin = np.min(np.stack((interferograms_mc[data_n,], interferograms_ICASAR[data_n,], residual[data_n])))
+        vmax = np.max(np.stack((interferograms_mc[data_n,], interferograms_ICASAR[data_n,], residual[data_n])))
+        plot_ifg(interferograms_mc[data_n,], axes[0,data_n], mask, vmin, vmax)
+        plot_ifg(interferograms_ICASAR[data_n,], axes[1,data_n], mask, vmin, vmax)
+        plot_ifg(residual[data_n,], axes[2,data_n], mask, vmin, vmax)
+
+
+
+visualise_ICASAR_inversion(displacement_r2['incremental'], S_best, time_courses, displacement_r2['mask'], n_data = 10)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

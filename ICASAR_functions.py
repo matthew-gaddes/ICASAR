@@ -9,7 +9,8 @@ Created on Tue May 29 11:23:10 2018
 
 def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window", 
            bootstrapping_param = (200,0), ica_param = (1e-4, 150), tsne_param = (30,12), hdbscan_param = (35,10),
-           out_folder = './ICASAR_results/', ica_verbose = 'long', inset_axes_side = {'x':0.1, 'y':0.1}, create_all_ifgs_flag = False):
+           out_folder = './ICASAR_results/', ica_verbose = 'long', inset_axes_side = {'x':0.1, 'y':0.1}, create_all_ifgs_flag = False,
+           load_fastICA_results = False):
     """
     Perform ICASAR, which is a robust way of applying sICA to data.  As PCA is also performed as part of this,
     the sources and time courses found by PCA are also returned.  Note that this can be run with eitehr 1d data (e.g. time series for a GPS station),
@@ -48,6 +49,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
                                     in short temporal baseline ifgs).  
                                     e.g. for 3 interferogams between 4 acquisitions: a1__i1__a2__i2__a3__i3__a4
                                     This option would also make: a1__i4__a3, a1__i5__a4, a2__i6__a4
+        load_fastICA_results | boolean | The multiple runs of FastICA are slow, so if now paramters are being changed here, previous runs can be reloaded.  
 
     Outputs:
         S_best | rank 2 array | the recovered sources as row vectors (e.g. 5 x 1230)
@@ -169,30 +171,34 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
             if n_ifgs != len(spatial_data['ifg_dates']):                                                                # and check it's equal to the list of ifg dates (YYYYMMDD_YYYYMMDD)
                 raise Exception(f"There should be an equal number of incremental interferogram and dates (in the form YYYYMMDD_YYYYMMDD), but they appear to be different.  Exiting...")
 
-        
+
     # create a folder that will be used for outputs
-    try:
-        print("Trying to remove the existing outputs folder... ", end = '')
-        shutil.rmtree(out_folder)                                                                       # try to remove folder
-        print('Done!')
-    except:
-        print("Failed!")                                                                                # 
-    try:
-        print("Trying to create a new outputs folder... ", end = '')                                    # try to make a new folder
-        os.makedirs(out_folder)                                                                         # swtiched to makedirs (from mkdir) to hand paths with intermedeaite folders.          
-        print('Done!')
-    except:
-        print("Failed!")                                                                                          
+    if os.path.exists(out_folder):                                                                      # see if the folder we'll write to exists.  
+        if load_fastICA_results:                                                                        # we will need the .pkl of results from a previous run, so can't just delete the folder.  
+            existing_files = os.listdir(out_folder)                                                     # get all the ICASAR outputs.  
+            for existing_file in existing_files:
+                if existing_file == 'FastICA_results.pkl':                                              # if it's the results from the time consuming FastICA runs...
+                    pass                                                                                # ignore it    
+                else:
+                    os.remove(out_folder / existing_file)                                               # but if not, delete it.  
+        else:
+            print("Removing the existing outputs folder... ", end = '')                                 # if we don't care about the FastICA results file, just delete the folder and then make a new one.  
+            shutil.rmtree(out_folder)                                                                   # try to remove folder
+            os.mkdir(out_folder)
+    else:
+        os.mkdir(out_folder)                                                                            # if it never existed, make it.  
+                                                                                           
 
     n_converge_bootstrapping = bootstrapping_param[0]                 # unpack input tuples
-    n_converge_no_bootstrapping = bootstrapping_param[1]
-    
+    n_converge_no_bootstrapping = bootstrapping_param[1]  
     
 
     # -1: Possibly create all interferograms from incremental
     if create_all_ifgs_flag:
         print(f"Creating all possible interferogram pairs from the incremental interferograms...", end = '')
-        _, mixtures, ifg_dates = create_all_ifgs(mixtures, spatial_data['ifg_dates'])                               # if ifg_dates is None, None is also returned.  
+        mixtures_incremental = np.copy(mixtures)                                                                                # make a copy of the originals that we can use to calculate the time courses.  
+        mixtures_incremental_mc = mixtures_incremental - np.mean(mixtures_incremental, axis = 1)[:, np.newaxis]
+        _, mixtures, ifg_dates = create_all_ifgs(mixtures_incremental, spatial_data['ifg_dates'])                               # if ifg_dates is None, None is also returned.  
         print(" Done!")
     if (spatial) and (ifg_dates is not None):
         temporal_baselines = baseline_from_names(ifg_dates)
@@ -219,56 +225,23 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
             plot_temporal_signals(x_decorrelate_rs, '02_PCA_sources', **fig_kwargs)
     print('Done!')
    
-      
-    # 2: do ICA multiple times   
-    # First with bootstrapping
-    A_hist_BS = []                                                                                      # ditto but with bootstrapping
-    S_hist_BS = []
-    n_ica_converge = 0
-    n_ica_fail = 0
-    if ica_verbose == 'short' and n_converge_bootstrapping > 0:                                 # if we're only doing short version of verbose, and will be doing bootstrapping
-        print(f"FastICA progress with bootstrapping: ", end = '')
-    while n_ica_converge < n_converge_bootstrapping:
-        S, A, ica_converged = bootstrap_ICA(mixtures_mc, n_comp, bootstrap = True, ica_param = ica_param, verbose = fastica_verbose)                # note that this will perform PCA on the bootstrapped samples, so can be slow.  
-        if ica_converged:
-            n_ica_converge += 1
-            A_hist_BS.append(A)                                     # record results
-            S_hist_BS.append(S)                                     # record results
-        else:
-            n_ica_fail += 1
-        if ica_verbose == 'long':
-            print(f"sICA with bootstrapping has converged {n_ica_converge} of {n_converge_bootstrapping} times.   \n")              # longer (more info) update to terminal
-        else:
-            print(f"{int(100*(n_ica_converge/n_converge_bootstrapping))}% ", end = '')                                              # short update to terminal
-
-    # and without bootstrapping
-    A_hist_no_BS = []                                                                        # initiate to store time courses without bootstrapping
-    S_hist_no_BS = []                                                                        # and recovered sources        
-    n_ica_converge = 0                                                                       # reset the counters for the second lot of ica
-    n_ica_fail = 0
-    if ica_verbose == 'short' and n_converge_no_bootstrapping > 0:                           # if we're only doing short version of verbose, and are actually doing ICA with no bootstrapping
-        print(f"FastICA progress without bootstrapping: ", end = '')
-    while n_ica_converge < n_converge_no_bootstrapping:
-        S, A, ica_converged = bootstrap_ICA(mixtures_mc, n_comp, bootstrap = False, ica_param = ica_param,
-                                            X_whitened = x_white, dewhiten_matrix = PC_whiten_mat, verbose = fastica_verbose)               # no bootstrapping, so PCA doesn't need to be run each time and we can pass it the whitened data.  
-        
-        if ica_converged:
-            n_ica_converge += 1
-            A_hist_no_BS.append(A)                                     # record results
-            S_hist_no_BS.append(S)                                     # record results
-        else:
-            n_ica_fail += 1
-        if ica_verbose == 'long':
-            print(f"sICA without bootstrapping has converged {n_ica_converge} of {n_converge_no_bootstrapping} times.   \n",)
-        else:
-            print(f"{int(100*(n_ica_converge/n_converge_no_bootstrapping))}% ", end = '')
-            
-        
-       
-    # 3: change data structure for sources, and compute similarities and distances between them.  
-    #A_hist = A_hist_BS + A_hist_no_BS                                                                   # list containing the time courses from each run.  i.e. each is: times x n_components
-    S_hist = S_hist_BS + S_hist_no_BS                                                                   # list containing the soures from each run.  i.e.: each os n_components x n_pixels
     
+    # 2: Make or load the results of the multiple ICA runs.  
+    if load_fastICA_results:
+        print(f"Loading the results of multiple FastICA runs.  ")
+        with open(out_folder / 'FastICA_results.pkl', 'rb') as f:
+            S_hist = pickle.load(f)   
+            A_hist = pickle.load(f)
+    else:
+       print(f"No results were found for the multiple ICA runs, so these will now be performed.  ")
+       S_hist, A_hist = perform_multiple_ICA_runs(n_comp, mixtures_mc, bootstrapping_param, ica_param,
+                                                  x_white, PC_dewhiten_mat, ica_verbose) 
+       with open(out_folder / 'FastICA_results.pkl', 'wb') as f:
+            pickle.dump(S_hist, f)
+            pickle.dump(A_hist, f)
+
+    
+    # 3: Convert the sources from lists from each run to a single matrix.  
     if spatial:
         sources_all_r2, sources_all_r3 = sources_list_to_r2_r3(S_hist, mask)                            # convert to more useful format.  r2 one is (n_components x n_runs) x n_pixels, r3 one is (n_components x n_runs) x ny x nx, and a masked array
     else:
@@ -305,15 +278,16 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     Iq_sorted = np.sort(Iq)[::-1]               
     n_clusters = S_best.shape[0]                                                                     # the number of sources/centrotypes is equal to the number of clusters    
     
-    # 5: Make time courses using centrotypes
-    tcs = np.zeros((n_mixtures, n_clusters))                                                        # store time courses as columns    
-    source_residuals = np.zeros((n_mixtures,1))                                                     # initiate array to store these
-    for i in range(n_mixtures):
-        m, residual_centrotypes = bss_components_inversion(S_best, mixtures_mc[i,:])                # fit each of the training ifgs with the chosen ICs
-        tcs[i,:] = m                                                                            # store time course
-        source_residuals[i,0] = residual_centrotypes                                            # if bootstrapping, as sources come from bootstrapped data they are better for doing the fitting
-    print('Done!')
-    
+    # 5: Make time courses using centrotypes (i.e. S_best, the spatial patterns found by ICA)
+    if create_all_ifgs_flag:
+        inversion_results = bss_components_inversion(S_best, [mixtures_incremental_mc, mixtures_mc])                       # invert to fit both the incremental and all possible ifgs.  
+        tcs_all = inversion_results[1]['tcs'].T
+    else:
+        inversion_results = bss_components_inversion(S_best, [mixtures_mc])                                                 # invert to fit the incremetal ifgs.  
+        tcs_all = inversion_results[0]['tcs'].T
+    source_residuals = inversion_results[0]['residual']        
+    tcs = inversion_results[0]['tcs'].T
+
  
     # 6: Possibly make figure of the centrotypes (chosen sources) and time courses.  
     if fig_kwargs['figures'] != "none":
@@ -342,7 +316,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     
     # 9: Calculate the correlations between the temporal baselines and timecourses 
     if (spatial_data is not None) and ('temporal_baselines' in locals()) :                                                                                      # if we're working with spatial data, we should check the ifgs and acq dates are the correct lengths as these are easy to confuse.  
-        tcs_to_tempbaselines_comparisons = signals_to_master_signal_comparison(tcs.T, np.asarray(temporal_baselines)[np.newaxis,:], density = True)               # And then we can do kernel density plots for each IC and the DEM
+        tcs_to_tempbaselines_comparisons = signals_to_master_signal_comparison(tcs_all.T, np.asarray(temporal_baselines)[np.newaxis,:], density = True)               # And then we can do kernel density plots for each IC and the DEM
     else:
         tcs_to_tempbaselines_comparisons = None
   
@@ -459,6 +433,86 @@ def bootstrapped_sources_to_centrotypes(sources_r2, hdbscan_param, tsne_param):
         S_best = np.copy(sources_r2[np.ravel(S_best_args),:])                                       # these are the centrotype sources
     
         return S_best, labels_hdbscan, xy_tsne, clusters_by_max_Iq_no_noise, Iq
+
+
+#%%
+
+def perform_multiple_ICA_runs(n_comp, mixtures_mc, bootstrapping_param, ica_param,
+                              mixtures_white = None, dewhiten_matrix = None, ica_verbose = 'long'):
+    """
+    ICASAR requires ICA to be run many times, wither with or without bootstrapping.  This function performs this.  
+    Inputs:
+        n_comp | int | the number of souces we aim to recover.  
+        mixutres_mc | rank 2 array | mixtures as rows, mean centered along rows.  I.e. of size n_varaibles x n_observations.  
+        bootstrapping_param | tuple | (number of ICA runs with bootstrap, number of ICA runs without bootstrapping )  e.g. (100,10)
+        ica_param | tuple | Used to control ICA, (ica_tol, ica_maxit)
+        mixtures_white | rank 2 | mean centered and decorellated and unit variance in each dimension (ie whitened).  As per mixtures, row vectors.  
+        dewhiten_matrix | rank 2 | n_comp x n_comp.  mixtures_mc = dewhiten_matrix @ mixtures_white
+        ica_verbose | 'long' or 'short' | if long, full details of ICA runs are given.  If short, only the overall progress 
+    Returns:
+        S_best | list of rank 2 arrays | the sources from each run of the FastICA algorithm, n_comp x n_pixels.  Bootstrapped ones first, non-bootstrapped second.  
+        A_hist | list of rank 2 arrays | the time courses from each run of the FastICA algorithm.  n_ifgs x n_comp.  Bootstrapped ones first, non-bootstrapped second.  
+    History:
+        2021_04_23 | MEG | Written
+    """
+    
+    # 1: unpack a tuple and check a few inputs.  
+    n_converge_bootstrapping = bootstrapping_param[0]                 # unpack input tuples
+    n_converge_no_bootstrapping = bootstrapping_param[1]          
+    
+    if (n_converge_no_bootstrapping > 0) and ((mixtures_white is None) or (dewhiten_matrix is None)):
+        raise Exception(f"If runs without bootstrapping are to be performed, the whitened data and the dewhitening matrix must be provided, yet one "
+                        f"or more of these are 'None'.  This is as PCA is performed to whiten the data, yet if bootstrapping is not being used "
+                        f"the data don't change, so PCA doesn't need to be run (and it can be computationally expensive).  Exiting.  ")
+    
+    # 2: do ICA multiple times   
+    # First with bootstrapping
+    A_hist_BS = []                                                                                      # ditto but with bootstrapping
+    S_hist_BS = []
+    n_ica_converge = 0
+    n_ica_fail = 0
+    if ica_verbose == 'short' and n_converge_bootstrapping > 0:                                 # if we're only doing short version of verbose, and will be doing bootstrapping
+        print(f"FastICA progress with bootstrapping: ", end = '')
+    while n_ica_converge < n_converge_bootstrapping:
+        S, A, ica_converged = bootstrap_ICA(mixtures_mc, n_comp, bootstrap = True, ica_param = ica_param, verbose = ica_verbose)                # note that this will perform PCA on the bootstrapped samples, so can be slow.  
+        if ica_converged:
+            n_ica_converge += 1
+            A_hist_BS.append(A)                                     # record results
+            S_hist_BS.append(S)                                     # record results
+        else:
+            n_ica_fail += 1
+        if ica_verbose == 'long':
+            print(f"sICA with bootstrapping has converged {n_ica_converge} of {n_converge_bootstrapping} times.   \n")              # longer (more info) update to terminal
+        else:
+            print(f"{int(100*(n_ica_converge/n_converge_bootstrapping))}% ", end = '')                                              # short update to terminal
+
+    # and without bootstrapping
+    A_hist_no_BS = []                                                                        # initiate to store time courses without bootstrapping
+    S_hist_no_BS = []                                                                        # and recovered sources        
+    n_ica_converge = 0                                                                       # reset the counters for the second lot of ica
+    n_ica_fail = 0
+    if ica_verbose == 'short' and n_converge_no_bootstrapping > 0:                           # if we're only doing short version of verbose, and are actually doing ICA with no bootstrapping
+        print(f"FastICA progress without bootstrapping: ", end = '')
+    while n_ica_converge < n_converge_no_bootstrapping:
+        S, A, ica_converged = bootstrap_ICA(mixtures_mc, n_comp, bootstrap = False, ica_param = ica_param,
+                                            X_whitened = mixtures_white, dewhiten_matrix = dewhiten_matrix, verbose = ica_verbose)               # no bootstrapping, so PCA doesn't need to be run each time and we can pass it the whitened data.  
+        
+        if ica_converged:
+            n_ica_converge += 1
+            A_hist_no_BS.append(A)                                     # record results
+            S_hist_no_BS.append(S)                                     # record results
+        else:
+            n_ica_fail += 1
+        if ica_verbose == 'long':
+            print(f"sICA without bootstrapping has converged {n_ica_converge} of {n_converge_no_bootstrapping} times.   \n",)
+        else:
+            print(f"{int(100*(n_ica_converge/n_converge_no_bootstrapping))}% ", end = '')
+       
+    # 3: change data structure for sources, and compute similarities and distances between them.  
+    A_hist = A_hist_BS + A_hist_no_BS                                                                   # list containing the time courses from each run.  i.e. each is: times x n_components
+    S_hist = S_hist_BS + S_hist_no_BS                                                                   # list containing the soures from each run.  i.e.: each os n_components x n_pixels
+    
+    return S_hist, A_hist
 
 
      
