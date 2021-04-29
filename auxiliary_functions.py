@@ -10,6 +10,50 @@ Created on Tue Dec 17 18:19:37 2019
 #%%
 
 
+
+def visualise_ICASAR_inversion(interferograms, sources, time_courses, mask, n_data = 10):
+    """
+        2021_03_03 | MEG | Written.  
+    """
+    import numpy as np
+    
+    def plot_ifg(ifg, ax, mask, vmin, vmax):
+        """
+        """
+        w = ax.imshow(col_to_ma(ifg, mask), interpolation ='none', aspect = 'equal', vmin = vmin, vmax = vmax)                                                   # 
+        axin = ax.inset_axes([0, -0.06, 1, 0.05])
+        fig.colorbar(w, cax=axin, orientation='horizontal')
+        ax.set_yticks([])
+        ax.set_xticks([])
+    
+    import matplotlib.pyplot as plt
+    
+    interferograms_mc = interferograms - np.mean(interferograms, axis = 1)[:, np.newaxis]
+    interferograms_ICASAR = time_courses @ sources
+    residual = interferograms_mc - interferograms_ICASAR
+    
+    if n_data > interferograms.shape[0]:
+        n_data = interferograms.shape[0]
+
+    
+    fig, axes = plt.subplots(3, n_data, figsize = (15,7))  
+    if n_data == 1:    
+        axes = np.atleast_2d(axes).T                                                # make 2d, and a column (not a row)
+    
+    row_labels = ['Data', 'Model', 'Resid.' ]
+    for ax, label in zip(axes[:,0], row_labels):
+        ax.set_ylabel(label)
+
+    for data_n in range(n_data):
+        vmin = np.min(np.stack((interferograms_mc[data_n,], interferograms_ICASAR[data_n,], residual[data_n])))
+        vmax = np.max(np.stack((interferograms_mc[data_n,], interferograms_ICASAR[data_n,], residual[data_n])))
+        plot_ifg(interferograms_mc[data_n,], axes[0,data_n], mask, vmin, vmax)
+        plot_ifg(interferograms_ICASAR[data_n,], axes[1,data_n], mask, vmin, vmax)
+        plot_ifg(residual[data_n,], axes[2,data_n], mask, vmin, vmax)
+
+#%%
+
+
 def plot_source_tc_correlations(sources, mask, dem = None, dem_to_ic_comparisons = None, tcs_to_tempbaselines_comparisons = None,
                                 png_path = './', figures = "window"):
     """Given information about the ICs, their correlations with the DEM, and their time courses correlations with an intererograms temporal basleine, 
@@ -558,11 +602,11 @@ def bss_components_inversion(sources, interferograms):
         g = sources.T                                              # a matrix of ICA sources and each is a column (n_pixels x n_sources)
         
         ### Begin different types of inversions.  
-        #m = np.linalg.inv(g.T @ g) @ g.T @ d                       # m (n_sources x 1), least squares
+        m = np.linalg.inv(g.T @ g) @ g.T @ d                       # m (n_sources x 1), least squares
         #m = g.T @ np.linalg.inv(g @ g.T) @ d                      # m (n_sources x 1), least squares with minimum norm condition.     COULDN'T GET TO WORK.  
         #m = np.linalg.pinv(g) @ d                                   # Moore-Penrose inverse of G for a simple inversion.  
-        u = 1e0                                                                 # bigger value favours a smoother m, which in turn can lead to a worse fit of the data.  1e3 gives smooth but bad fit, 1e1 is a compromise, 1e0 is rough but good fit.  
-        m = np.linalg.inv(g.T @ g + u*np.eye(g.shape[1])) @ g.T @ d;                # Tikhonov solution  
+        # u = 1e0                                                                 # bigger value favours a smoother m, which in turn can lead to a worse fit of the data.  1e3 gives smooth but bad fit, 1e1 is a compromise, 1e0 is rough but good fit.  
+        # m = np.linalg.inv(g.T @ g + u*np.eye(g.shape[1])) @ g.T @ d;                # Tikhonov solution  
         
         
         ### end different types of inversion

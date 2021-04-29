@@ -358,6 +358,340 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
 
 #%%
 
+
+def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_cols=5, crop_pixels = None, return_r3 = False):
+    """ A function to prepare the outputs of LiCSBAS for use with LiCSALERT.
+    LiCSBAS uses nans for masked areas - here these are converted to masked arrays.   Can also create three figures: 1) The Full LiCSBAS ifg, and the area
+    that it has been cropped to 2) The cumulative displacement 3) The incremental displacement.  
+
+    Inputs:
+        h5_file | string | path to h5 file.  e.g. cum_filt.h5
+        figures | boolean | if True, make figures
+        n_cols  | int | number of columns for figures.  May want to lower if plotting a long time series
+        crop_pixels | tuple | coords to crop images to.  x then y, 00 is top left.  e.g. (10, 500, 600, 900).  
+                                x_start, x_stop, y_start, y_stop, No checking that inputted values make sense.  
+                                Note, generally better to have cropped (cliped in LiCSBAS language) to the correct area in LiCSBAS_for_LiCSAlert
+        return_r3 | boolean | if True, the rank 3 data is also returns (n_ifgs x height x width).  Not used by ICASAR, so default is False
+
+    Outputs:
+        displacment_r3 | dict | Keys: cumulative, incremental.  Stored as masked arrays.  Mask should be consistent through time/interferograms
+                                Also lons and lats, which are the lons and lats of all pixels in the images (ie rank2, and not column or row vectors)    
+        displacment_r2 | dict | Keys: cumulative, incremental, mask.  Stored as row vectors in arrays.  
+                                Also lons and lats, which are the lons and lats of all pixels in the images (ie rank2, and not column or row vectors)    
+        baseline_info | dict| imdates : acquisition dates as strings
+                              daisy_chain : names of the daisy chain of ifgs, YYYYMMDD_YYYYMMDD
+                              baselines : temporal baselines of incremental ifgs
+
+    2019/12/03 | MEG | Written
+    2020/01/13 | MEG | Update depreciated use of dataset.value to dataset[()] when working with h5py files from LiCSBAS
+    2020/02/16 | MEG | Add argument to crop images based on pixel, and return baselines etc
+    2020/11/24 | MEG | Add option to get lons and lats of pixels.  
+    2021/04/15 | MEG | Update lons and lats to be packaged into displacement_r2 and displacement_r3
+    2021_04_16 | MEG | Add option to also open the DEM that is in the .hgt file.  
+    """
+
+    import h5py as h5
+    import numpy as np
+    import numpy.ma as ma
+    import matplotlib.pyplot as plt
+    import os
+    import re
+    from pathlib import Path
+    
+    from auxiliary_functions_from_other_repos import add_square_plot
+    
+    
+
+    def rank3_ma_to_rank2(ifgs_r3, consistent_mask = False):
+        """A function to take a time series of interferograms stored as a rank 3 array,
+        and convert it into the ICA(SAR) friendly format of a rank 2 array with ifgs as
+        row vectors, and an associated mask.
+
+        For use with ICA, the mask must be consistent.
+
+        Inputs:
+            ifgs_r3 | r3 masked array | ifgs in rank 3 format
+            consistent_mask | boolean | If True, areas of incoherence are consistent through the whole stack
+                                        If false, a consistent mask will be made.  N.b. this step can remove the number of pixels dramatically.
+        """
+
+        n_ifgs = ifgs_r3.shape[0]
+        # 1: Deal with masking
+        mask_coh_water = ifgs_r3.mask                                                               #get the mask as a rank 3, still boolean
+        if consistent_mask:
+            mask_coh_water_consistent = mask_coh_water[0,]                                             # if all ifgs are masked in the same way, just grab the first one
+        else:
+            mask_coh_water_sum = np.sum(mask_coh_water, axis = 0)                                       # sum to make an image that shows in how many ifgs each pixel is incoherent
+            mask_coh_water_consistent = np.where(mask_coh_water_sum == 0, np.zeros(mask_coh_water_sum.shape),
+                                                                          np.ones(mask_coh_water_sum.shape)).astype(bool)    # make a mask of pixels that are never incoherent
+        ifgs_r3_consistent = ma.array(ifgs_r3, mask = ma.repeat(mask_coh_water_consistent[np.newaxis,], n_ifgs, axis = 0))                       # mask with the new consistent mask
+
+        # 2: Convert from rank 3 to rank 2
+        n_pixs = ma.compressed(ifgs_r3_consistent[0,]).shape[0]                                                        # number of non-masked pixels
+        ifgs_r2 = np.zeros((n_ifgs, n_pixs))
+        for ifg_n, ifg in enumerate(ifgs_r3_consistent):
+            ifgs_r2[ifg_n,:] = ma.compressed(ifg)
+
+        return ifgs_r2, mask_coh_water_consistent
+
+
+    def ts_quick_plot(ifgs_r3, title):
+        """
+        A quick function to plot a rank 3 array of ifgs.
+        Inputs:
+            title | string | title
+        """
+        n_ifgs = ifgs_r3.shape[0]
+        n_rows = int(np.ceil(n_ifgs / n_cols))
+        fig1, axes = plt.subplots(n_rows,n_cols)
+        fig1.suptitle(title)
+        for n_ifg in range(n_ifgs):
+            ax=np.ravel(axes)[n_ifg]                                                                            # get axes on it own
+            matrixPlt = ax.imshow(ifgs_r3[n_ifg,],interpolation='none', aspect='equal')                         # plot the ifg
+            ax.set_xticks([])
+            ax.set_yticks([])
+            fig1.colorbar(matrixPlt,ax=ax)                                                                       
+            ax.set_title(f'Ifg: {n_ifg}')
+        for axe in np.ravel(axes)[(n_ifgs):]:                                                                   # delete any unused axes
+            axe.set_visible(False)
+
+    def daisy_chain_from_acquisitions(acquisitions):
+        """Given a list of acquisiton dates, form the names of the interferograms that would create a simple daisy chain of ifgs.  
+        Inputs:
+            acquisitions | list | list of acquistiion dates in form YYYYMMDD
+        Returns:
+            daisy_chain | list | names of daisy chain ifgs, in form YYYYMMDD_YYYYMMDD
+        History:
+            2020/02/16 | MEG | Written
+        """
+        daisy_chain = []
+        n_acqs = len(acquisitions)
+        for i in range(n_acqs-1):
+            daisy_chain.append(f"{acquisitions[i]}_{acquisitions[i+1]}")
+        return daisy_chain
+    
+        
+    def baseline_from_names(names_list):
+        """Given a list of ifg names in the form YYYYMMDD_YYYYMMDD, find the temporal baselines in days_elapsed
+        Inputs:
+            names_list | list | in form YYYYMMDD_YYYYMMDD
+        Returns:
+            baselines | list of ints | baselines in days
+        History:
+            2020/02/16 | MEG | Documented 
+        """
+        from datetime import datetime
+        
+        baselines = []
+        for file in names_list:
+            master = datetime.strptime(file.split('_')[-2], '%Y%m%d')   
+            slave = datetime.strptime(file.split('_')[-1][:8], '%Y%m%d')   
+            baselines.append(-1 *(master - slave).days)    
+        return baselines
+    
+    def create_lon_lat_meshgrids(corner_lon, corner_lat, post_lon, post_lat, ifg):
+        """ Return a mesh grid of the longitudes and latitues for each pixels.  Not tested!
+        I think Corner is the top left, but not sure this is always the case
+        """
+        ny, nx = ifg.shape
+        x = corner_lon +  (post_lon * np.arange(nx))
+        y = corner_lat +  (post_lat * np.arange(ny))
+        xx, yy = np.meshgrid(x,y)
+        geocode_info = {'lons_mg' : xx,
+                        'lats_mg' : yy}
+        return geocode_info
+
+    def get_param_par(mlipar, field):
+        """
+        Get parameter from mli.par or dem_par file. Examples of fields are;
+         - range_samples
+         - azimuth_lines
+         - range_looks
+         - azimuth_looks
+         - range_pixel_spacing (m)
+         - azimuth_pixel_spacing (m)
+         - radar_frequency  (Hz)
+        """
+        import subprocess as subp
+        value = subp.check_output(['grep', field,mlipar]).decode().split()[1].strip()
+        return value
+    
+        
+    def read_img(file, length, width, dtype=np.float32, endian='little'):
+        """
+        Read image data into numpy array.
+        endian: 'little' or 'big' (not 'little' is regarded as 'big')
+        """
+        if endian == 'little':
+            data = np.fromfile(file, dtype=dtype).reshape((length, width))
+        else:
+            data = np.fromfile(file, dtype=dtype).byteswap().reshape((length, width))
+        return data
+
+
+    
+    # 0: Work out the names of LiCSBAS folders - not tested exhaustively! 
+    LiCSBAS_folders = {}
+    LiCSBAS_folders['all'] = os.listdir(LiCSBAS_out_folder)
+    for LiCSBAS_folder in LiCSBAS_folders['all']:
+        if bool(re.match(re.compile('TS_.'), LiCSBAS_folder)):                                                   # the timeseries output, which is named depending on mutlitlooking and clipping.  
+            LiCSBAS_folders['TS_'] = LiCSBAS_folder
+        else:
+            pass
+        if re.match(re.compile('GEOCml.+clip'), LiCSBAS_folder):                                            # see if there is a folder of multilooked and clipped
+            LiCSBAS_folders['ifgs'] = LiCSBAS_folder
+        elif re.match(re.compile('GEOCml.+'), LiCSBAS_folder):                                            # see if there is a folder of multilooked and clipped
+            LiCSBAS_folders['ifgs'] = LiCSBAS_folder
+        elif re.match(re.compile('GEOC'), LiCSBAS_folder):                                            # see if there is a folder of multilooked and clipped
+            LiCSBAS_folders['ifgs'] = LiCSBAS_folder
+        else:
+            pass
+    
+
+    # 1: Open the h5 file with the incremental deformation in.  
+    displacement_r3 = {}                                                                                        # here each image will 1 x width x height stacked along first axis
+    displacement_r2 = {}                                                                                        # here each image will be a row vector 1 x pixels stacked along first axis
+    baseline_info = {}
+
+    if filtered:
+        cumh5 = h5.File(LiCSBAS_out_folder / LiCSBAS_folders['TS_'] / 'cum_filt.h5' ,'r')                       # either open the filtered file from LiCSBAS
+    else:
+        cumh5 = h5.File(LiCSBAS_out_folder / LiCSBAS_folders['TS_'] / 'cum.h5' ,'r')                            # or the non filtered file from LiCSBAS
+    baseline_info["imdates"] = cumh5['imdates'][()].astype(str).tolist()                                        # get the acquisition dates
+    cumulative = cumh5['cum'][()]                                                                                # get cumulative displacements as a rank3 numpy array
+    
+    # 2: Mask the data  
+    mask_coh_water = np.isnan(cumulative)                                                                       # get where masked
+    displacement_r3["cumulative"] = ma.array(cumulative, mask=mask_coh_water)                                   # rank 3 masked array of the cumulative displacement
+    displacement_r3["incremental"] = np.diff(displacement_r3['cumulative'], axis = 0)                           # displacement between each acquisition - ie incremental
+    n_im, length, width = displacement_r3["cumulative"].shape                                   
+
+    if figures:                                                 
+        ts_quick_plot(displacement_r3["cumulative"], title = 'Cumulative displacements')
+        ts_quick_plot(displacement_r3["incremental"], title = 'Incremental displacements')
+
+    displacement_r2['cumulative'], displacement_r2['mask'] = rank3_ma_to_rank2(displacement_r3['cumulative'])      # convert from rank 3 to rank 2 and a mask
+    displacement_r2['incremental'], _ = rank3_ma_to_rank2(displacement_r3['incremental'])                          # also convert incremental, no need to also get mask as should be same as above
+
+    # 3: work with the acquisiton dates to produces names of daisy chain ifgs, and baselines
+    baseline_info["daisy_chain"] = daisy_chain_from_acquisitions(baseline_info["imdates"])
+    baseline_info["baselines"] = baseline_from_names(baseline_info["daisy_chain"])
+    baseline_info["baselines_cumulative"] = np.cumsum(baseline_info["baselines"])                                                            # cumulative baslines, e.g. 12 24 36 48 etc
+    
+    # 4: get the lons and lats of each pixel in the ifgs
+    geocode_info = create_lon_lat_meshgrids(cumh5['corner_lon'][()], cumh5['corner_lat'][()], 
+                                            cumh5['post_lon'][()], cumh5['post_lat'][()], displacement_r3['incremental'][0,:,:])             # create meshgrids of the lons and lats for each pixel
+    displacement_r2['lons'] = geocode_info['lons_mg']                                                                                        # add to the displacement dict
+    displacement_r2['lats'] = geocode_info['lats_mg']
+    displacement_r3['lons'] = geocode_info['lons_mg']                                                                                        # add to the displacement dict (rank 3 one)
+    displacement_r3['lats'] = geocode_info['lats_mg']
+
+    # 4: Open the parameter file to get the number of pixels in width and height (though this should agree with above)
+    try:
+        width = int(get_param_par(LiCSBAS_out_folder / LiCSBAS_folders['ifgs'] / 'slc.mli.par', 'range_samples'))
+        length = int(get_param_par(LiCSBAS_out_folder / LiCSBAS_folders['ifgs'] / 'slc.mli.par', 'azimuth_lines'))
+    except:
+        print(f"Failed to open the 'slc.mli.par' file, so taking the width and length of the image from the h5 file and trying to continue.  ")
+        (_, length, width) = cumulative.shape
+        
+        
+        
+    # 4: get the DEM
+    try:
+        dem = read_img(LiCSBAS_out_folder / LiCSBAS_folders['ifgs'] / 'hgt', length, width)
+    except:
+        dem = None
+    displacement_r2['dem'] = dem                                                                      # and added to the displacement dict in the same was as the lons and lats
+    displacement_r3['dem'] = dem                                                                      # 
+        
+    
+    # if crop_pixels is not None:
+    #     print(f"Cropping the images in x from {crop_pixels[0]} to {crop_pixels[1]} "
+    #           f"and in y from {crop_pixels[2]} to {crop_pixels[3]} (NB matrix notation - 0,0 is top left.  ")
+    #     cumulative = cumulative_uncropped[:, crop_pixels[2]:crop_pixels[3], crop_pixels[0]:crop_pixels[1]]                        # note rows first (y), then columns (x)
+    #     if figures:
+    #         ifg_n_plot = 1                                                                                      # which number ifg to plot.  Shouldn't need to change.  
+    #         title = f'Cropped region, ifg {ifg_n_plot}'
+    #         fig_crop, ax = plt.subplots()
+    #         fig_crop.canvas.set_window_title(title)
+    #         ax.set_title(title)
+    #         ax.imshow(cumulative_uncropped[ifg_n_plot, :,:],interpolation='none', aspect='auto')                # plot the uncropped ifg
+    #         add_square_plot(crop_pixels[0], crop_pixels[1], crop_pixels[2], crop_pixels[3], ax)                 # draw a box showing the cropped region    
+  
+    # else:
+    #     cumulative = cumulative_uncropped
+    
+
+    if return_r3:
+        return displacement_r3, displacement_r2, baseline_info
+    else:
+        return displacement_r2, baseline_info
+
+#%%
+def update_mask_sources_ifgs(mask_sources, sources, mask_ifgs, ifgs):
+    """ Given two masks of pixels, create a mask of pixels that are valid for both.  Also return the two sets of data with the new masks applied.  
+    Inputs:
+        mask_sources | boolean rank 2| original mask
+        sources  | r2 array | sources as row vectors
+        mask_ifgs | boolean rank 2| new mask
+        ifgs  | r2 array | ifgs as row vectors
+    Returns:
+        ifgs_new_mask
+        sources_new_mask
+        mask_both | boolean rank 2| original mask
+    History:
+        2020/02/19 | MEG |  Written      
+        2020/06/26 | MEG | Major rewrite.  
+        2021_04_20 | MEG | Add check that sources and ifgs are both rank 2 (use row vectors if only one source, but it must be rank2 and not rank 1)
+    """
+    import numpy as np
+    import numpy.ma as ma
+    from auxiliary_functions import col_to_ma
+
+        
+    
+    def apply_new_mask(ifgs, mask_old, mask_new):
+        """Apply a new mask to a collection of ifgs (or sources) that are stored as row vectors with an accompanying mask.  
+        Inputs:
+            ifgs | r2 array | ifgs as row vectors
+            mask_old | r2 array | mask to convert a row of ifg into a rank 2 masked array
+            mask_new | r2 array | the new mask to be applied.  Note that it must not unmask any pixels that are already masked.  
+        Returns:
+            ifgs_new_mask | r2 array | as per ifgs, but with a new mask.  
+        History:
+            2020/06/26 | MEG | Written
+        """
+        n_pixs_new = len(np.argwhere(mask_new == False))                                        
+        ifgs_new_mask = np.zeros((ifgs.shape[0], n_pixs_new))                        # initiate an array to store the modified sources as row vectors    
+        for ifg_n, ifg in enumerate(ifgs):                                 # Loop through each source
+            ifg_r2 = col_to_ma(ifg, mask_old)                             # turn it from a row vector into a rank 2 masked array        
+            ifg_r2_new_mask = ma.array(ifg_r2, mask = mask_new)              # apply the new mask   
+            ifgs_new_mask[ifg_n, :] = ma.compressed(ifg_r2_new_mask)       # convert to row vector and places in rank 2 array of modified sources
+        return ifgs_new_mask
+    
+    
+    # check some inputs.  Not exhuastive!
+    if (len(sources.shape) != 2) or (len(ifgs.shape) != 2):
+        raise Exception(f"Both 'sources' and 'ifgs' must be rank 2 arrays (even if they are only a single source).  Exiting. ")
+    
+    mask_both = ~np.logical_and(~mask_sources, ~mask_ifgs)                                       # make a new mask for pixels that are in the sources AND in the current time series
+    n_pixs_sources = len(np.argwhere(mask_sources == False))                                  # masked pixels are 1s, so invert with 1- bit so that non-masked are 1s, then sum to get number of pixels
+    n_pixs_new = len(np.argwhere(mask_ifgs == False))                                          # ditto for new mask
+    n_pixs_both = len(np.argwhere(mask_both == False))                                        # ditto for the mutual mask
+    print(f"Updating masks and ICA sources.  Of the {n_pixs_sources} in the sources and {n_pixs_new} in the current LiCSBAS time series, "
+          f"{n_pixs_both} are in both and can be used in this iteration of LiCSAlert.  ")
+    
+    ifgs_new_mask = apply_new_mask(ifgs, mask_ifgs, mask_both)                                  # apply the new mask to the old ifgs and return the non-masked elemts as row vectors.  
+    sources_new_mask = apply_new_mask(sources, mask_sources, mask_both)                         # ditto for the sources.  
+    
+    return ifgs_new_mask, sources_new_mask, mask_both
+    
+
+
+
+
+#%%
+
 def bootstrapped_sources_to_centrotypes(sources_r2, hdbscan_param, tsne_param):
     """ Given the products of the bootstrapping, run the 2d manifold and clustering algorithms to create centrotypes.  
     Inputs:
