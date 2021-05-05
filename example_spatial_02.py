@@ -4,7 +4,7 @@ Created on Tue Feb 20 12:17:22 2018
 
 @author: eemeg
 
-An example of the ICASAR software with real data that contains a deformation signals that is not visible in a single 6/12 days Sentinel-1 interferogram.  
+An example of the ICASAR software with real data from LiCSBAS that contains a deformation signals that is not visible in a single 6/12 days Sentinel-1 interferogram.  
 
 """
 #%% Imports
@@ -21,8 +21,6 @@ from auxiliary_functions import visualise_ICASAR_inversion
 
 
 
-import sys; sys.path.append('/home/matthew/university_work/python_stuff/python_scripts/')
-from small_plot_functions import matrix_show
 #%% Things to set
 
 ICASAR_settings = {"n_comp" : 5,                                         # number of components to recover with ICA (ie the number of PCA sources to keep)
