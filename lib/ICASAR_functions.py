@@ -23,12 +23,15 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     
     Inputs:
         n_comp | int | Number of ocmponents that are retained from PCA and used as the input for ICA.  
-        spatial_data | dict or None | contains 'mixtures_r2' in which the images are stored as row vectors and 'mask', which converts a row vector back to a masked array
-                                       Optional:
-                                           lons | rank 2 array | lons of each pixel in the image.  Changed to rank 2 in version 2.0, from rank 1 in version 1.0  .  If supplied, ICs will be geocoded as kmz.  
-                                           lats | rank 2 array | lats of each pixel in the image. Changed to rank 2 in version 2.0, from rank 1 in version 1.0
-                                           dem | rank 2 array | height in metres of each pixel in the image.  If supplied, IC vs dem plots will be produced.  
-                                           ifg_dates | list | dates of the interferograms in the form YYYYMMDD_YYYYMMDD.  If supplied, IC strength vs temporal baseline plots will be produced.  
+        spatial_data | dict or None | Required: 
+                                         displacement_r2 | rank 2 array | row vectors of the ifgs
+                                         mask  | rank 2 array | mask to conver the row vectors to rank 2 masked arrays.  
+                                      Optional (ie don't have to exist in the dictionary):
+                                         ifg_dates | list | dates of the interferograms in the form YYYYMMDD_YYYYMMDD.  If supplied, IC strength vs temporal baseline plots will be produced.  
+                                         lons | rank 2 array | lons of each pixel in the image.  Changed to rank 2 in version 2.0, from rank 1 in version 1.0  .  If supplied, ICs will be geocoded as kmz.  
+                                         lats | rank 2 array | lats of each pixel in the image. Changed to rank 2 in version 2.0, from rank 1 in version 1.0
+                                         dem | rank 2 array | height in metres of each pixel in the image.  If supplied, IC vs dem plots will be produced.  
+                                         
         temporal_data | dict or None | contains 'mixtures_r2' as time signals as row vectors and 'xvals' which are the times for each item in the time signals.   
         figures | string,  "window" / "png" / "none" / "png+window" | controls if figures are produced, noet none is the string none, not the NoneType None
         
@@ -176,6 +179,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     if os.path.exists(out_folder):                                                                      # see if the folder we'll write to exists.  
         if load_fastICA_results:                                                                        # we will need the .pkl of results from a previous run, so can't just delete the folder.  
             existing_files = os.listdir(out_folder)                                                     # get all the ICASAR outputs.  
+            print(f"As 'load_fastICA' is set to True, all but the FastICA_results.pkl file will be deleted.   ")
             for existing_file in existing_files:
                 if existing_file == 'FastICA_results.pkl':                                              # if it's the results from the time consuming FastICA runs...
                     pass                                                                                # ignore it    
@@ -198,7 +202,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         print(f"Creating all possible interferogram pairs from the incremental interferograms...", end = '')
         mixtures_incremental = np.copy(mixtures)                                                                                # make a copy of the originals that we can use to calculate the time courses.  
         mixtures_incremental_mc = mixtures_incremental - np.mean(mixtures_incremental, axis = 1)[:, np.newaxis]
-        _, mixtures, ifg_dates = create_all_ifgs(mixtures_incremental, spatial_data['ifg_dates'])                               # if ifg_dates is None, None is also returned.  
+        mixtures, ifg_dates = create_all_ifgs(mixtures_incremental, spatial_data['ifg_dates'])                               # if ifg_dates is None, None is also returned.  
         print(" Done!")
     if (spatial) and (ifg_dates is not None):
         temporal_baselines = baseline_from_names(ifg_dates)
@@ -298,6 +302,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         
     # 7: Possibly geocode the recovered sources and make a Google Earth file.     
     if ge_kmz:
+        #import pdb; pdb.set_trace()
         print('Creating a Google Earth .kmz of the geocoded independent components... ', end = '')
         S_best_r3 = r2_to_r3(S_best, mask)
         r2_arrays_to_googleEarth(S_best_r3, spatial_data['lons'], spatial_data['lats'], 'IC', out_folder = out_folder)                              # note that lons and lats should be rank 2 (ie an entry for each pixel in the ifgs)
@@ -546,6 +551,8 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
             LiCSBAS_folders['ifgs'] = LiCSBAS_folder
         else:
             pass
+    if 'TS_' not in LiCSBAS_folders:
+        raise Exception(f"Unable to find the TS_* folder that contains the .h5 files with the LiCSBAS results.  Exiting.  ")
     
 
     # 1: Open the h5 file with the incremental deformation in.  
@@ -557,7 +564,7 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
         cumh5 = h5.File(LiCSBAS_out_folder / LiCSBAS_folders['TS_'] / 'cum_filt.h5' ,'r')                       # either open the filtered file from LiCSBAS
     else:
         cumh5 = h5.File(LiCSBAS_out_folder / LiCSBAS_folders['TS_'] / 'cum.h5' ,'r')                            # or the non filtered file from LiCSBAS
-    baseline_info["imdates"] = cumh5['imdates'][()].astype(str).tolist()                                        # get the acquisition dates
+    baseline_info["acq_dates"] = cumh5['imdates'][()].astype(str).tolist()                                        # get the acquisition dates
     cumulative = cumh5['cum'][()]                                                                                # get cumulative displacements as a rank3 numpy array
     
     # 2: Mask the data  
@@ -574,8 +581,8 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
     displacement_r2['incremental'], _ = rank3_ma_to_rank2(displacement_r3['incremental'])                          # also convert incremental, no need to also get mask as should be same as above
 
     # 3: work with the acquisiton dates to produces names of daisy chain ifgs, and baselines
-    baseline_info["daisy_chain"] = daisy_chain_from_acquisitions(baseline_info["imdates"])
-    baseline_info["baselines"] = baseline_from_names(baseline_info["daisy_chain"])
+    baseline_info["ifg_dates"] = daisy_chain_from_acquisitions(baseline_info["acq_dates"])
+    baseline_info["baselines"] = baseline_from_names(baseline_info["ifg_dates"])
     baseline_info["baselines_cumulative"] = np.cumsum(baseline_info["baselines"])                                                            # cumulative baslines, e.g. 12 24 36 48 etc
     
     # 4: get the lons and lats of each pixel in the ifgs

@@ -264,18 +264,18 @@ def signals_to_master_signal_comparison(signals, master_signal, density = False)
 
 #%%
 
-def create_all_ifgs(ifgs_r2, ifg_dates = None):
+def create_all_ifgs(ifgs_r2, ifg_dates):
     """Given a rank 2 of incremental ifgs, calculate all the possible ifgs that still step forward in time (i.e. if deformation is positive in all incremental ifgs, 
     it remains positive in all the returned ifgs.)  If acquisition dates are provided, the tmeporal baselines of all the possible ifgs can also be found.  
     Inputs:
         ifgs_r2 | rank 2 array | Interferograms as row vectors.  
-        acq_dates | list of strings | dates in the form YYYYMMDD_YYYYMMDD.  As the interferograms are incremental, this should be the same length as the number of ifgs
+        ifg_dates | list of strings | dates in the form YYYYMMDD_YYYYMMDD.  As the interferograms are incremental, this should be the same length as the number of ifgs
     Returns:
-        ifgs_r3 | rank 3 array | all possible ifgs (including the negative ones).  First two dimensions are the acquisitions, so row 3 col 4 is the ifg between acquisitions 3 and 4.  
         ifgs_r2 | rank 2 array | Only the ones that are non-zero (the diagonal in ifgs_r3) and in the lower left corner (so deformation isn't reversed.  )
     History:
         2021_04_13 | MEG | Written
         2021_04_19 | MEG | add funcionality to calculate the temporal baselines of all possible ifgs.  
+        2021_04_29 | MEG | Add functionality to handle networks with breaks in them.  
     """
     import numpy as np
     from datetime import datetime, timedelta
@@ -298,35 +298,76 @@ def create_all_ifgs(ifgs_r2, ifg_dates = None):
         return lower_left_indexes
 
     
-    n_pixs = ifgs_r2.shape[1]
-    n_acq = ifgs_r2.shape[0] + 1
+    n_ifgs, n_pixs = ifgs_r2.shape
+        
+    # 1: Determine if the network is continuous, and if not split it into lists
+    ifg_dates_continuous = []                                                                   # list of the dates for a continuous network
+    ifgs_r2_continuous = []                                                                     # and the incremental interferograms in that network.  
+    start_continuous_run = 0
+    for ifg_n in range(n_ifgs-1):
+        if (ifg_dates[ifg_n][9:] != ifg_dates[ifg_n+1][:8]):                                   # if the dates don't agree
+            ifg_dates_continuous.append(ifg_dates[start_continuous_run:ifg_n+1])                # +1 as want to include the last date in the selection
+            ifgs_r2_continuous.append(ifgs_r2[start_continuous_run:ifg_n+1,])
+            start_continuous_run = ifg_n+1                                                      # +1 so that when we index the next time, it doesn't include ifg_n
+        if ifg_n == n_ifgs -2:                                                                  # of if we've got to the end of the list.              
+            ifg_dates_continuous.append(ifg_dates[start_continuous_run:])                       # select to the end.  
+            ifgs_r2_continuous.append(ifgs_r2[start_continuous_run:,])
+            
+    n_networks = len(ifg_dates_continuous)                                                      # get the number of connected networks.  
     
-    # 1: convert from daisy chain of incremental to a relative to a single master at the start of the time series.  
-    acq1_def = np.zeros((1, n_pixs))                                                # deformation is 0 at the first acquisition
-    ifgs_cs = np.cumsum(ifgs_r2, axis = 0)                                          # convert from incremental to cumulative.  
-    ifgs_cs = np.vstack((acq1_def, ifgs_cs))
-    
-    # 2: create all possible ifgs
-    ifgs_all_r3 = np.zeros((n_acq, n_acq, n_pixs))                                    # cube to store all possible ifgs in
-    for i in range(n_acq):                                                          # loop through each column and add the ifgs.  
-        ifgs_all_r3[:,i,] = ifgs_cs - ifgs_cs[i,]
-       
-    # 3: Get only the positive ones (ie the lower left quadrant)    
-    lower_left_indexes = triange_lower_left_indexes(n_acq)                              # get the indexes of the ifgs in the lower left corner (ie. non 0, and with unreveresed deformation.  )
-    ifgs_all_r2 = ifgs_all_r3[lower_left_indexes[:,0], lower_left_indexes[:,1], :]      # get those ifgs and store as row vectors.  
-    
-    # 4: Calculate the dates that the new ifgs run between.  
-    if ifg_dates is not None:                                                                                               # only do it if we have acq_dates
-        acq_dates = acquisitions_from_ifg_dates(ifg_dates)
-        ifg_dates_all_r2 = np.empty([n_acq, n_acq], dtype='U17')
-        for row_n, date1 in enumerate(acq_dates):                                                                           # loop throug rows
-            for col_n, date2 in enumerate(acq_dates):
+    # for item in ifgs_r2_continuous:
+    #     print(item.shape)
+    # for item in ifg_dates_continuous:
+    #     print(item)
+    #     print('\n')
+
+    # import copy
+    # ifg_dates_copy = copy.copy(ifg_dates)
+    # for ifg_list in ifg_dates_continuous:
+    #     for ifg in ifg_list:
+    #         try:
+    #             del ifg_dates_copy[ifg_dates_copy.index(ifg)]
+    #         except:
+    #             pass
+    # print(ifg_dates_copy)
+
+    # 2: Loop through each continuous network and make all possible ifgs.  
+    ifgs_all_r2 = []
+    dates_all_r1 = []
+    for n_network in range(n_networks):
+        ifgs_r2_temp = ifgs_r2_continuous[n_network]
+        ifg_dates_temp = ifg_dates_continuous[n_network]
+        n_acq = ifgs_r2_temp.shape[0] + 1
+        
+        # 2a: convert from daisy chain of incremental to a relative to a single master at the start of the time series.  
+        acq1_def = np.zeros((1, n_pixs))                                                # deformation is 0 at the first acquisition
+        ifgs_cs = np.cumsum(ifgs_r2_temp, axis = 0)                                          # convert from incremental to cumulative.  
+        ifgs_cs = np.vstack((acq1_def, ifgs_cs))
+        
+        # 2b: create all possible ifgs
+        ifgs_cube = np.zeros((n_acq, n_acq, n_pixs))                                    # cube to store all possible ifgs in
+        for i in range(n_acq):                                                          # loop through each column and add the ifgs.  
+            ifgs_cube[:,i,] = ifgs_cs - ifgs_cs[i,]
+           
+        # 2c: Get only the positive ones (ie the lower left quadrant)    
+        lower_left_indexes = triange_lower_left_indexes(n_acq)                              # get the indexes of the ifgs in the lower left corner (ie. non 0, and with unreveresed deformation.  )
+        ifgs_all_r2.append(ifgs_cube[lower_left_indexes[:,0], lower_left_indexes[:,1], :])        # get those ifgs and store as row vectors.  
+        
+        # 2d: Calculate the dates that the new ifgs run between.  
+        acq_dates = acquisitions_from_ifg_dates(ifg_dates_temp)                                                         # get the acquisitions from the ifg dates.  
+        ifg_dates_all_r2 = np.empty([n_acq, n_acq], dtype='U17')                                                        # initate an array that can hold unicode strings.  
+        for row_n, date1 in enumerate(acq_dates):                                                                       # loop through rows
+            for col_n, date2 in enumerate(acq_dates):                                                                   # loop through columns
                 ifg_dates_all_r2[row_n, col_n] = f"{date2}_{date1}"
         ifg_dates_all_r1 = list(ifg_dates_all_r2[lower_left_indexes[:,0], lower_left_indexes[:,1]])             # just get the lower left corner (like for the ifgs)
-    else:
-        ifg_dates_all_r1 = None
+
+        dates_all_r1.append(ifg_dates_all_r1)
+
+    # 3: convert lists back to a single matrix of all interferograms.  
+    ifgs_all_r2 = np.vstack(ifgs_all_r2)
+    dates_all_r1 = [item for sublist in dates_all_r1 for item in sublist]                                           # not clear how this works....
     
-    return ifgs_all_r3, ifgs_all_r2, ifg_dates_all_r1
+    return ifgs_all_r2, dates_all_r1
 
 
   
@@ -745,12 +786,13 @@ def r2_array_to_png(r2, filename, png_folder = './'):
         png of figure
     History:
         2020/06/10 | MEG | Written
+        2021_05_05 | MEG | Change colours to coolwarm.  
         
     """
     import matplotlib.pyplot as plt
     
     f, ax = plt.subplots(1,1)
-    ax.imshow(r2)
+    ax.imshow(r2, cmap = plt.get_cmap('coolwarm'))
     plt.gca().set_axis_off()
     plt.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, hspace = 0, wspace = 0)
     plt.margins(0,0)
