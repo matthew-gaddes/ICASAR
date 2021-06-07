@@ -383,7 +383,7 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
                                 Also lons and lats, which are the lons and lats of all pixels in the images (ie rank2, and not column or row vectors)    
         displacment_r2 | dict | Keys: cumulative, incremental, mask.  Stored as row vectors in arrays.  
                                 Also lons and lats, which are the lons and lats of all pixels in the images (ie rank2, and not column or row vectors)    
-        baseline_info | dict| imdates : acquisition dates as strings
+        tbaseline_info | dict| imdates : acquisition dates as strings
                               daisy_chain : names of the daisy chain of ifgs, YYYYMMDD_YYYYMMDD
                               baselines : temporal baselines of incremental ifgs
 
@@ -393,6 +393,7 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
     2020/11/24 | MEG | Add option to get lons and lats of pixels.  
     2021/04/15 | MEG | Update lons and lats to be packaged into displacement_r2 and displacement_r3
     2021_04_16 | MEG | Add option to also open the DEM that is in the .hgt file.  
+    2021_05_07 | MEG | Change the name of baseline_info to tbaseline_info to be consistent with LiCSAlert
     """
 
     import h5py as h5
@@ -558,13 +559,13 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
     # 1: Open the h5 file with the incremental deformation in.  
     displacement_r3 = {}                                                                                        # here each image will 1 x width x height stacked along first axis
     displacement_r2 = {}                                                                                        # here each image will be a row vector 1 x pixels stacked along first axis
-    baseline_info = {}
+    tbaseline_info = {}
 
     if filtered:
         cumh5 = h5.File(LiCSBAS_out_folder / LiCSBAS_folders['TS_'] / 'cum_filt.h5' ,'r')                       # either open the filtered file from LiCSBAS
     else:
         cumh5 = h5.File(LiCSBAS_out_folder / LiCSBAS_folders['TS_'] / 'cum.h5' ,'r')                            # or the non filtered file from LiCSBAS
-    baseline_info["acq_dates"] = cumh5['imdates'][()].astype(str).tolist()                                        # get the acquisition dates
+    tbaseline_info["acq_dates"] = cumh5['imdates'][()].astype(str).tolist()                                        # get the acquisition dates
     cumulative = cumh5['cum'][()]                                                                                # get cumulative displacements as a rank3 numpy array
     
     # 2: Mask the data  
@@ -581,9 +582,9 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
     displacement_r2['incremental'], _ = rank3_ma_to_rank2(displacement_r3['incremental'])                          # also convert incremental, no need to also get mask as should be same as above
 
     # 3: work with the acquisiton dates to produces names of daisy chain ifgs, and baselines
-    baseline_info["ifg_dates"] = daisy_chain_from_acquisitions(baseline_info["acq_dates"])
-    baseline_info["baselines"] = baseline_from_names(baseline_info["ifg_dates"])
-    baseline_info["baselines_cumulative"] = np.cumsum(baseline_info["baselines"])                                                            # cumulative baslines, e.g. 12 24 36 48 etc
+    tbaseline_info["ifg_dates"] = daisy_chain_from_acquisitions(tbaseline_info["acq_dates"])
+    tbaseline_info["baselines"] = baseline_from_names(tbaseline_info["ifg_dates"])
+    tbaseline_info["baselines_cumulative"] = np.cumsum(tbaseline_info["baselines"])                                                            # cumulative baslines, e.g. 12 24 36 48 etc
     
     # 4: get the lons and lats of each pixel in the ifgs
     geocode_info = create_lon_lat_meshgrids(cumh5['corner_lon'][()], cumh5['corner_lat'][()], 
@@ -630,9 +631,9 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
     
 
     if return_r3:
-        return displacement_r3, displacement_r2, baseline_info
+        return displacement_r3, displacement_r2, tbaseline_info
     else:
-        return displacement_r2, baseline_info
+        return displacement_r2, tbaseline_info
 
 #%%
 def update_mask_sources_ifgs(mask_sources, sources, mask_ifgs, ifgs):

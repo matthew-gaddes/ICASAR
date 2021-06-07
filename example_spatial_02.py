@@ -42,11 +42,8 @@ LiCSBAS_out_folder_campi_flegrei = Path('./campi_flegrei_LiCSBAS_example_data/')
 #%% Import the results of LiCSBAS
 
 print(f"Opening the LiCSBAS .h5 file...", end = '')
-displacement_r2, tbaseline_info = LiCSBAS_to_ICASAR(LiCSBAS_out_folder_campi_flegrei, figures=True)                             # open the h5 file produced by LiCSBAS, lons and lats are in geocode info and same resolution as the ifgs
+displacement_r2, tbaseline_info = LiCSBAS_to_ICASAR(LiCSBAS_out_folder_campi_flegrei, figures=True)        # open various LiCSBAS products, spatial ones in displacement_r2, temporal ones in tbaseline_info
 print(f"Done.  ")
-
-
- 
 
 #%% do ICA with ICSAR function
 
@@ -57,6 +54,7 @@ spatial_data = {'mixtures_r2'    : displacement_r2['incremental'],
                 'lons'           : displacement_r2['lons'],
                 'lats'           : displacement_r2['lats']}
                 
+del tbaseline_info                                                                      # only the ifg_dates are needed for ICASAR, and as these are copied out above, this can be deleted.  
 
 S_best, time_courses, x_train_residual_ts, Iq, n_clusters, S_all_info, phUnw_mean  = ICASAR(spatial_data = spatial_data, **ICASAR_settings) 
 
