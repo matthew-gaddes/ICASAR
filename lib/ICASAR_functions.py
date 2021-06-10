@@ -174,8 +174,12 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
             if n_ifgs != len(spatial_data['ifg_dates']):                                                                # and check it's equal to the list of ifg dates (YYYYMMDD_YYYYMMDD)
                 raise Exception(f"There should be an equal number of incremental interferogram and dates (in the form YYYYMMDD_YYYYMMDD), but they appear to be different.  Exiting...")
 
+    # -3: Possibly change the matplotlib backend.  
+    if figures == 'png':
+        plt.switch_backend('agg')                                                                       # with this backend, no windows are created during figure creation.  
 
-    # create a folder that will be used for outputs
+
+    # -2: create a folder that will be used for outputs
     if os.path.exists(out_folder):                                                                      # see if the folder we'll write to exists.  
         if load_fastICA_results:                                                                        # we will need the .pkl of results from a previous run, so can't just delete the folder.  
             existing_files = os.listdir(out_folder)                                                     # get all the ICASAR outputs.  
