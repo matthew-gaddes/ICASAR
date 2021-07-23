@@ -173,7 +173,15 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
             n_ifgs = spatial_data['mixtures_r2'].shape[0]                                                               # get the number of incremental ifgs
             if n_ifgs != len(spatial_data['ifg_dates']):                                                                # and check it's equal to the list of ifg dates (YYYYMMDD_YYYYMMDD)
                 raise Exception(f"There should be an equal number of incremental interferogram and dates (in the form YYYYMMDD_YYYYMMDD), but they appear to be different.  Exiting...")
-
+    
+    if spatial_data is not None:                                                                                      # if we're working with spatial data
+        spatial_data_r2_arrays = ['mask', 'dem', 'lons', 'lats']                                                        # we need to check the spatial data is the correct resolution (ie all the same)
+        for spatial_data_r2_array1 in spatial_data_r2_arrays:
+            for spatial_data_r2_array2 in spatial_data_r2_arrays:
+                if spatial_data[spatial_data_r2_array1].shape != spatial_data[spatial_data_r2_array2].shape:
+                    raise Exception(f"All the spatial data should be the same size, but {spatial_data_r2_array1} is of shape {spatial_data[spatial_data_r2_array1].shape}, "
+                                    f"and {spatial_data_r2_array2} is of shape {spatial_data[spatial_data_r2_array2].shape}.  Exiting.")
+        
     # -3: Possibly change the matplotlib backend.  
     if figures == 'png':
         plt.switch_backend('agg')                                                                       # with this backend, no windows are created during figure creation.  
@@ -242,7 +250,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
                 S_hist = pickle.load(f)   
                 A_hist = pickle.load(f)
         except:
-            raise Exception(f"Failed to open the results from the previous runs of FastICA.  Perhaps load_fastICA_results should be set to False if they don't exit?  Exiting.   ")
+            raise Exception(f"Failed to open the results from the previous runs of FastICA.  Perhaps load_fastICA_results should be set to False if they don't exist?  Exiting.   ")
     else:
        print(f"No results were found for the multiple ICA runs, so these will now be performed.  ")
        S_hist, A_hist = perform_multiple_ICA_runs(n_comp, mixtures_mc, bootstrapping_param, ica_param,
