@@ -237,9 +237,12 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     # 2: Make or load the results of the multiple ICA runs.  
     if load_fastICA_results:
         print(f"Loading the results of multiple FastICA runs.  ")
-        with open(out_folder / 'FastICA_results.pkl', 'rb') as f:
-            S_hist = pickle.load(f)   
-            A_hist = pickle.load(f)
+        try:
+            with open(out_folder / 'FastICA_results.pkl', 'rb') as f:
+                S_hist = pickle.load(f)   
+                A_hist = pickle.load(f)
+        except:
+            raise Exception(f"Failed to open the results from the previous runs of FastICA.  Perhaps load_fastICA_results should be set to False if they don't exit?  Exiting.   ")
     else:
        print(f"No results were found for the multiple ICA runs, so these will now be performed.  ")
        S_hist, A_hist = perform_multiple_ICA_runs(n_comp, mixtures_mc, bootstrapping_param, ica_param,
@@ -406,7 +409,8 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
     import matplotlib.pyplot as plt
     import os
     import re
-    from pathlib import Path
+    import pathlib
+    #from pathlib import Path
     
     from auxiliary_functions_from_other_repos import add_square_plot
     
@@ -538,7 +542,9 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
             data = np.fromfile(file, dtype=dtype).byteswap().reshape((length, width))
         return data
 
-
+    # -1: Check for common argument errors:
+    if not isinstance(LiCSBAS_out_folder, pathlib.PurePath):
+        raise Exception(f"'LiCSBAS_out_folder' must be a pathlib Path, but instead is a {type(LiCSBAS_out_folder)}. Exiting.  ")
     
     # 0: Work out the names of LiCSBAS folders - not tested exhaustively! 
     LiCSBAS_folders = {}

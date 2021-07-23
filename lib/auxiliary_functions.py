@@ -165,7 +165,7 @@ def plot_source_tc_correlations(sources, mask, dem = None, dem_to_ic_comparisons
                 axes[2,ic_n+1].yaxis.set_ticklabels([])                                                            # if it's not the last one, turn the  tick labels off
             else:
                 axes[2,ic_n+1].yaxis.set_ticks_position('right')                                                   # but if it is, make sure they're on the right.  
-                axes[2,ic_n+1].set_ylabel(f"IC strength")
+                axes[2,ic_n+1].set_ylabel(f"IC usage strength")
                 axes[2,ic_n+1].yaxis.set_label_position('right')
             
             if ic_n == int(n_sources/2):                                                                            # on roughly the middle plot....
@@ -179,7 +179,7 @@ def plot_source_tc_correlations(sources, mask, dem = None, dem_to_ic_comparisons
     # 3: The ICs colorbar
     axin = axes[0,0].inset_axes([0.5, 0, 0.1, 1])            
     cbar_2 = f.colorbar(im, cax=axin, orientation='vertical')
-    cbar_2.set_label('IC strength')
+    cbar_2.set_label('IC')
     axin.yaxis.set_ticks_position('left')
 
     # last tidying up

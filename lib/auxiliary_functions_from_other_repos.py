@@ -255,6 +255,9 @@ def update_mask_sources_ifgs(mask_sources, sources, mask_ifgs, ifgs):
     # check some inputs.  Not exhuastive!
     if (len(sources.shape) != 2) or (len(ifgs.shape) != 2):
         raise Exception(f"Both 'sources' and 'ifgs' must be rank 2 arrays (even if they are only a single source).  Exiting. ")
+        
+    if mask_sources.shape != mask_ifgs.shape:
+        raise Exception(f"The two masks must be the same size, even if they mask different pixels.  Exiting.  ")
     
     mask_both = ~np.logical_and(~mask_sources, ~mask_ifgs)                                       # make a new mask for pixels that are in the sources AND in the current time series
     n_pixs_sources = len(np.argwhere(mask_sources == False))                                  # masked pixels are 1s, so invert with 1- bit so that non-masked are 1s, then sum to get number of pixels
