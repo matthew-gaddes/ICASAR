@@ -175,10 +175,13 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
                 raise Exception(f"There should be an equal number of incremental interferogram and dates (in the form YYYYMMDD_YYYYMMDD), but they appear to be different.  Exiting...")
     
     if spatial_data is not None:                                                                                      # if we're working with spatial data
-        spatial_data_r2_arrays = ['mask', 'dem', 'lons', 'lats']                                                        # we need to check the spatial data is the correct resolution (ie all the same)
-        for spatial_data_r2_array1 in spatial_data_r2_arrays:
-            for spatial_data_r2_array2 in spatial_data_r2_arrays:
-                if spatial_data[spatial_data_r2_array1].shape != spatial_data[spatial_data_r2_array2].shape:
+        spatial_data_r2_arrays = ['mask', 'dem', 'lons', 'lats']                                                      # we need to check the spatial data is the correct resolution (ie all the same)
+        spatial_data_r2_arrays_present = list(spatial_data.keys())                                                      # we alse need to determine which of these spatial data we actually have.  
+        spatial_data_r2_arrays = [i for i in spatial_data_r2_arrays if i in spatial_data_r2_arrays_present]             # remove any from the check list incase they're not provided.  
+            
+        for spatial_data_r2_array1 in spatial_data_r2_arrays:                                                           # first loop through each spatial data
+            for spatial_data_r2_array2 in spatial_data_r2_arrays:                                                       # second loo through each spatial data
+                if spatial_data[spatial_data_r2_array1].shape != spatial_data[spatial_data_r2_array2].shape:            # check the size is equal
                     raise Exception(f"All the spatial data should be the same size, but {spatial_data_r2_array1} is of shape {spatial_data[spatial_data_r2_array1].shape}, "
                                     f"and {spatial_data_r2_array2} is of shape {spatial_data[spatial_data_r2_array2].shape}.  Exiting.")
         
@@ -429,7 +432,7 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
         and convert it into the ICA(SAR) friendly format of a rank 2 array with ifgs as
         row vectors, and an associated mask.
 
-        For use with ICA, the mask must be consistent.
+        For use with ICA, the mask must be consistent (ie the same pixels are masked throughout the time series).
 
         Inputs:
             ifgs_r3 | r3 masked array | ifgs in rank 3 format
@@ -439,14 +442,14 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
 
         n_ifgs = ifgs_r3.shape[0]
         # 1: Deal with masking
-        mask_coh_water = ifgs_r3.mask                                                               #get the mask as a rank 3, still boolean
+        mask_coh_water = ifgs_r3.mask                                                                                               #get the mask as a rank 3, still boolean
         if consistent_mask:
-            mask_coh_water_consistent = mask_coh_water[0,]                                             # if all ifgs are masked in the same way, just grab the first one
+            mask_coh_water_consistent = mask_coh_water[0,]                                                                          # if all ifgs are masked in the same way, just grab the first one
         else:
-            mask_coh_water_sum = np.sum(mask_coh_water, axis = 0)                                       # sum to make an image that shows in how many ifgs each pixel is incoherent
+            mask_coh_water_sum = np.sum(mask_coh_water, axis = 0)                                                                   # sum to make an image that shows in how many ifgs each pixel is incoherent
             mask_coh_water_consistent = np.where(mask_coh_water_sum == 0, np.zeros(mask_coh_water_sum.shape),
-                                                                          np.ones(mask_coh_water_sum.shape)).astype(bool)    # make a mask of pixels that are never incoherent
-        ifgs_r3_consistent = ma.array(ifgs_r3, mask = ma.repeat(mask_coh_water_consistent[np.newaxis,], n_ifgs, axis = 0))                       # mask with the new consistent mask
+                                                                          np.ones(mask_coh_water_sum.shape)).astype(bool)           # make a mask of pixels that are never incoherent
+        ifgs_r3_consistent = ma.array(ifgs_r3, mask = ma.repeat(mask_coh_water_consistent[np.newaxis,], n_ifgs, axis = 0))          # mask with the new consistent mask
 
         # 2: Convert from rank 3 to rank 2
         n_pixs = ma.compressed(ifgs_r3_consistent[0,]).shape[0]                                                        # number of non-masked pixels
@@ -590,6 +593,8 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
     mask_coh_water = np.isnan(cumulative)                                                                       # get where masked
     displacement_r3["cumulative"] = ma.array(cumulative, mask=mask_coh_water)                                   # rank 3 masked array of the cumulative displacement
     displacement_r3["incremental"] = np.diff(displacement_r3['cumulative'], axis = 0)                           # displacement between each acquisition - ie incremental
+    if displacement_r3["incremental"].mask.shape == ():                                                         # in the case where no pixels are masked, the diff operation on the mask collapses it to nothing.  
+        displacement_r3["incremental"].mask = mask_coh_water[1:]                                                # in which case, we can recreate the mask from the rank3 mask, but dropping one from the first dimension as incremental is always one smaller than cumulative.  
     n_im, length, width = displacement_r3["cumulative"].shape                                   
 
     if figures:                                                 
@@ -619,16 +624,15 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
     except:
         print(f"Failed to open the 'slc.mli.par' file, so taking the width and length of the image from the h5 file and trying to continue.  ")
         (_, length, width) = cumulative.shape
-        
-        
-        
+       
     # 4: get the DEM
     try:
         dem = read_img(LiCSBAS_out_folder / LiCSBAS_folders['ifgs'] / 'hgt', length, width)
+        displacement_r2['dem'] = dem                                                                      # and added to the displacement dict in the same was as the lons and lats
+        displacement_r3['dem'] = dem                                                                      # 
     except:
-        dem = None
-    displacement_r2['dem'] = dem                                                                      # and added to the displacement dict in the same was as the lons and lats
-    displacement_r3['dem'] = dem                                                                      # 
+        print(f"Failed to open the DEM from the hgt file for this volcano, but trying to continue anyway.")
+    
         
     
     # if crop_pixels is not None:
