@@ -103,7 +103,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     from pathlib import Path
     # internal functions    
     from blind_signal_separation_funcitons import PCA_meg2
-    from auxiliary_functions import  bss_components_inversion, maps_tcs_rescale, r2_to_r3, r2_arrays_to_googleEarth
+    from auxiliary_functions import  bss_components_inversion, maps_tcs_rescale, r2_to_r3, r2_arrays_to_googleEarth, dem_and_temporal_source_figure
     from auxiliary_functions import plot_spatial_signals, plot_temporal_signals, plot_pca_variance_line
     from auxiliary_functions import prepare_point_colours_for_2d, prepare_legends_for_2d, create_all_ifgs, signals_to_master_signal_comparison, plot_source_tc_correlations
     from auxiliary_functions_from_other_repos import plot_2d_interactive_fig, baseline_from_names, update_mask_sources_ifgs
@@ -231,15 +231,17 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     print('Performing PCA to whiten the data....', end = "")
     PC_vecs, PC_vals, PC_whiten_mat, PC_dewhiten_mat, x_mc, x_decorrelate, x_white = PCA_meg2(mixtures_mc, verbose = False)    
     if spatial:
-        x_decorrelate_rs, PC_vecs_rs = maps_tcs_rescale(x_decorrelate[:n_comp,:], PC_vecs[:,:n_comp])                                           # x decorrlates is n_comps x n_samples (e.g. 5 x 2000)
+        x_decorrelate_rs, PC_vecs_rs = maps_tcs_rescale(x_decorrelate[:n_comp,:], PC_vecs[:,:n_comp])                          # rescale to new desicred range, and truncate to desired number of components.  
     else:
-        x_decorrelate_rs = x_decorrelate[:n_comp,:]                                                                         # temporally, we don't care about A and W so much, so don't bother to rescale, just select the requierd number of components.  
+        x_decorrelate_rs = x_decorrelate[:n_comp,:]                                                                            # truncate to desirec number of components
         PC_vecs_rs =  PC_vecs[:,:n_comp]
         
     if fig_kwargs['figures'] != "none":
         plot_pca_variance_line(PC_vals, title = '01_PCA_variance_line', **fig_kwargs)
         if spatial:
-            plot_spatial_signals(x_decorrelate_rs.T, mask, PC_vecs_rs.T, mask.shape, title = '02_PCA_sources_and_tcs', shared = 1, **fig_kwargs)
+            plot_spatial_signals(x_decorrelate_rs.T, mask, PC_vecs_rs.T, mask.shape, title = '02_PCA_sources_and_tcs', shared = 1, **fig_kwargs)                      # the usual plot of the sources and their time courses (ie contributions to each ifg)                              
+            dem_and_temporal_source_figure(x_decorrelate_rs, spatial_data['mask'], fig_kwargs, spatial_data['dem'],                                                 # also compare the sources to the DEM, and the correlation between their time courses and the temporal baseline of each interferogram.  
+                                           {'temporal_baselines' : temporal_baselines, 'tcs' : PC_vecs_rs}, fig_title = '03_PCA_source_correlations')
         else:
             plot_temporal_signals(x_decorrelate_rs, '02_PCA_sources', **fig_kwargs)
     print('Done!')
@@ -279,7 +281,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     marker_dict = {'labels' : np.ravel(np.hstack((np.zeros((1, n_comp*n_converge_bootstrapping)), np.ones((1, n_comp*n_converge_no_bootstrapping)))))}        # boostrapped are labelled as 0, and non bootstrapped as 1
     marker_dict['styles'] = ['o', 'x']                                                                                                                        # bootstrapped are 'o's, and non-bootstrapped are 'x's
        
-    plot_2d_labels = {'title' : '03_clustering_and_manifold_results',
+    plot_2d_labels = {'title' : '04_clustering_and_manifold_results',
                       'xlabel' : 'TSNE dimension 1',
                       'ylabel' : 'TSNE dimension 2'}
         
@@ -314,7 +316,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     # 6: Possibly make figure of the centrotypes (chosen sources) and time courses.  
     if fig_kwargs['figures'] != "none":
         if spatial:
-            plot_spatial_signals(S_best.T, mask, tcs.T, mask.shape, title = '04_ICASAR_sourcs_and_tcs', shared = 1, **fig_kwargs)               # plot the chosen sources
+            plot_spatial_signals(S_best.T, mask, tcs.T, mask.shape, title = '05_ICASAR_sourcs_and_tcs', shared = 1, **fig_kwargs)               # plot the chosen sources
         else:
             plot_temporal_signals(S_best, '04_ICASAR_sources', **fig_kwargs)
         
@@ -327,28 +329,11 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         print('Done!')
     
 
-    # 8: Calculate the correlations between the DEM and the ICs 
-    if (spatial_data is not None) and ('dem' in spatial_data) :                                                                                      # if we're working with spatial data, we should check the ifgs and acq dates are the correct lengths as these are easy to confuse.  
-        dem_ma = ma.masked_invalid(spatial_data['dem'])                                                                                                             # LiCSBAS dem uses nans, but lets switch to a masked array (with nans masked)
-        dem_new_mask, S_best_new_mask, mask_both = update_mask_sources_ifgs(spatial_data['mask'], S_best, ma.getmask(dem_ma), ma.compressed(dem_ma)[np.newaxis,:])  # Odly, the masked DEM is not the same as the masked ifgs, so find pixels we have value for both of
-        ic_dem_comparisons = {}
-        dem_to_ic_comparisons = signals_to_master_signal_comparison(S_best_new_mask, dem_new_mask, density = True)                                                  # And then we can do kernel density plots for each IC and the DEM
-    else:
-        dem_to_ic_comparisons = None
-        dem_ma = None
-    
-    # 9: Calculate the correlations between the temporal baselines and timecourses 
-    if (spatial_data is not None) and ('temporal_baselines' in locals()) :                                                                                      # if we're working with spatial data, we should check the ifgs and acq dates are the correct lengths as these are easy to confuse.  
-        tcs_to_tempbaselines_comparisons = signals_to_master_signal_comparison(tcs_all.T, np.asarray(temporal_baselines)[np.newaxis,:], density = True)               # And then we can do kernel density plots for each IC and the DEM
-    else:
-        tcs_to_tempbaselines_comparisons = None
-  
-    # 10: Plot the results of the two correlations.  
+    # 8: Calculate the correlations between the DEM and the ICs, and the ICs time courses and the temporal baselines of the interferograms.  
     if (spatial_data is not None):
-        if ('dem' in spatial_data) or ('temporal_baselines' in locals()):                                                                   # at least one of the two things we make comparisons against must exist for it to be worth plotting the figure.  
-            plot_source_tc_correlations(S_best, mask, dem_ma, dem_to_ic_comparisons, tcs_to_tempbaselines_comparisons, **fig_kwargs)
- 
-    
+        dem_and_temporal_source_figure(S_best, spatial_data['mask'], fig_kwargs, spatial_data['dem'],                                                 # also compare the sources to the DEM, and the correlation between their time courses and the temporal baseline of each interferogram.  
+                                       {'temporal_baselines' : temporal_baselines, 'tcs' : tcs_all}, fig_title = '06_ICA_source_correlations')
+        
 
     # 11: Save the results: 
     print('Saving the key results as a .pkl file... ', end = '')                                            # note that we don't save S_all_info as it's a huge file.  
@@ -795,6 +780,7 @@ def bootstrapped_sources_to_centrotypes(sources_r2, hdbscan_param, tsne_param):
             in_cluster_arg = np.argmax(np.sum(S_this_cluster, axis = 1))                            # the sum of a column of S_this... is the similarity between 1 source and all the others.  Look for the column that's the maximum
             S_best_args[i,0] = source_index[in_cluster_arg]                                         # conver the number in the cluster to the number overall (ie 2nd in cluster is actually 120th source)     
         S_best = np.copy(sources_r2[np.ravel(S_best_args),:])                                       # these are the centrotype sources
+        print('Done!' )
     
         return S_best, labels_hdbscan, xy_tsne, clusters_by_max_Iq_no_noise, Iq
 

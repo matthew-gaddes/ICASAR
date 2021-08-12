@@ -6,6 +6,48 @@ Created on Tue Dec 17 18:19:37 2019
 @author: matthew
 """
 
+#%%
+
+def dem_and_temporal_source_figure(sources, sources_mask, fig_kwargs, dem = None, temporal_data = None, fig_title = None):
+    """ Given sources recovered by a blind signal separation method (e.g. PCA or ICA) compare them in space to hte DEM,
+    and in time to the temporal baselines.  
+    Inputs:
+        sources | rank 2 array | as row vectors.  eg. 5 x999 for 5 sources.  
+        sources_mask | rank 2 | boolean array with a True value for any masked pixel.  Number of False pixels should be the same as the number of columns in row_vectors
+        fig_kwargs | dict | pass straing to plot_source_tc_correlations, see that for details.  
+        dem | masked array | a DEM as a masked array.  It should work if not availble.  
+        temporal data | dict | contains the temporal_baselines and the tcs (time courses).  It should work if not available.  
+        fig_title | string | sets the window title and the name of the .png produced.  
+        
+    Returns:
+        Figure
+        
+    History:
+        2021_09_12 | MEG | Written.  
+    """
+    import numpy as np
+    import numpy.ma as ma
+    
+    from auxiliary_functions_from_other_repos import update_mask_sources_ifgs
+    
+    if dem is not None:
+        dem_ma = ma.masked_invalid(dem)                                                                                                             # LiCSBAS dem uses nans, but lets switch to a masked array (with nans masked)
+        dem_new_mask, sources_new_mask, mask_both = update_mask_sources_ifgs(sources_mask, sources,                             # this takes mask and data as row vectors for one set of masked pixels (the sources from pca) 
+                                                                                      ma.getmask(dem_ma), ma.compressed(dem_ma)[np.newaxis,:])            # and the mask and data as row vectors from the other set of masked pixels (the DEM, hence why it's being turned into a row vector)
+        dem_to_sources_comparisons = signals_to_master_signal_comparison(sources_new_mask, dem_new_mask, density = True)                                                  # And then we can do kernel density plots for each IC and the DEM
+    else:
+        dem_to_sources_comparisons = None
+        dem_ma = None
+    
+    
+    if temporal_data is not None:
+        tcs_to_tempbaselines_comparisons = signals_to_master_signal_comparison(temporal_data['tcs'].T, 
+                                                                               np.asarray(temporal_data['temporal_baselines'])[np.newaxis,:], density = True)               # And then we can do kernel density plots for each IC and the DEM
+    else:
+        tcs_to_tempbaselines_comparisons = None
+                                                                               
+    plot_source_tc_correlations(sources, sources_mask, dem_ma, dem_to_sources_comparisons, tcs_to_tempbaselines_comparisons, fig_title = fig_title, **fig_kwargs)       # do the atual plotting
+
 
 #%%
 
@@ -55,7 +97,7 @@ def visualise_ICASAR_inversion(interferograms, sources, time_courses, mask, n_da
 
 
 def plot_source_tc_correlations(sources, mask, dem = None, dem_to_ic_comparisons = None, tcs_to_tempbaselines_comparisons = None,
-                                png_path = './', figures = "window"):
+                                png_path = './', figures = "window", fig_title = None):
     """Given information about the ICs, their correlations with the DEM, and their time courses correlations with an intererograms temporal basleine, 
     create a plot of this information.  
     Inputs:
@@ -94,7 +136,7 @@ def plot_source_tc_correlations(sources, mask, dem = None, dem_to_ic_comparisons
 
     f, axes = plt.subplots(3, (n_sources+1), figsize = (15,7))
     plt.subplots_adjust(wspace = 0.1)
-    f.canvas.set_window_title(f"ICs and correlations")
+    f.canvas.set_window_title(f"{fig_title}")
     
     # 1: Plot the DEM:
     if dem is not None:
@@ -127,7 +169,7 @@ def plot_source_tc_correlations(sources, mask, dem = None, dem_to_ic_comparisons
         im = axes[0,ic_n+1].imshow(col_to_ma(sources[ic_n,:], mask), cmap = ifg_colours_cent, vmin = np.min(sources), vmax = np.max(sources))
         axes[0,ic_n+1].set_xticks([])
         axes[0,ic_n+1].set_yticks([])
-        axes[0,ic_n+1].set_title(f"IC {ic_n}")
+        axes[0,ic_n+1].set_title(f"Source {ic_n}")
         
         # 2B: Plotting the IC to DEM scatter, if the data are available
         if dem_to_ic_comparisons is not None:
@@ -191,10 +233,10 @@ def plot_source_tc_correlations(sources, mask, dem = None, dem_to_ic_comparisons
     if figures == 'window':                                                                 # possibly save the output
         pass
     elif figures == "png":
-        f.savefig(f"{png_path}/05_IC_correlations.png")
+        f.savefig(f"{png_path}/{fig_title}.png")
         plt.close()
     elif figures == 'png+window':
-        f.savefig(f"{png_path}/05_IC_correlations.png")
+        f.savefig(f"{png_path}/{fig_title}.png")
     else:
         pass  
 
