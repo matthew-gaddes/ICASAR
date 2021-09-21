@@ -9,8 +9,8 @@ Created on Tue May 29 11:23:10 2018
 
 def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window", 
            bootstrapping_param = (200,0), ica_param = (1e-4, 150), tsne_param = (30,12), hdbscan_param = (35,10),
-           out_folder = './ICASAR_results/', ica_verbose = 'long', inset_axes_side = {'x':0.1, 'y':0.1}, create_all_ifgs_flag = False,
-           load_fastICA_results = False):
+           out_folder = './ICASAR_results/', ica_verbose = 'long', inset_axes_side = {'x':0.1, 'y':0.1}, 
+           create_all_ifgs_flag = False, load_fastICA_results = False):
     """
     Perform ICASAR, which is a robust way of applying sICA to data.  As PCA is also performed as part of this,
     the sources and time courses found by PCA are also returned.  Note that this can be run with eitehr 1d data (e.g. time series for a GPS station),
@@ -101,12 +101,12 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     import os                                                                    # ditto
     import pickle                                                                # to save outputs.  
     from pathlib import Path
-    # internal functions    
-    from blind_signal_separation_funcitons import PCA_meg2
-    from auxiliary_functions import  bss_components_inversion, maps_tcs_rescale, r2_to_r3, r2_arrays_to_googleEarth, dem_and_temporal_source_figure
-    from auxiliary_functions import plot_spatial_signals, plot_temporal_signals, plot_pca_variance_line
-    from auxiliary_functions import prepare_point_colours_for_2d, prepare_legends_for_2d, create_all_ifgs, signals_to_master_signal_comparison, plot_source_tc_correlations
-    from auxiliary_functions_from_other_repos import plot_2d_interactive_fig, baseline_from_names, update_mask_sources_ifgs
+    # internal functions
+    from icasar.blind_signal_separation import PCA_meg2
+    from icasar.aux import  bss_components_inversion, maps_tcs_rescale, r2_to_r3, r2_arrays_to_googleEarth, dem_and_temporal_source_figure
+    from icasar.aux import plot_spatial_signals, plot_temporal_signals, plot_pca_variance_line
+    from icasar.aux import prepare_point_colours_for_2d, prepare_legends_for_2d, create_all_ifgs, signals_to_master_signal_comparison, plot_source_tc_correlations
+    from icasar.aux2 import plot_2d_interactive_fig, baseline_from_names, update_mask_sources_ifgs
 
 
     # Check inputs, unpack either spatial or temporal data, and check for nans
@@ -201,9 +201,10 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
                 else:
                     os.remove(out_folder / existing_file)                                               # but if not, delete it.  
         else:
-            print("Removing the existing outputs folder... ", end = '')                                 # if we don't care about the FastICA results file, just delete the folder and then make a new one.  
+            print("Removing the existing outputs directory and creating a new empty one... ", end = '')                                 # if we don't care about the FastICA results file, just delete the folder and then make a new one.  
             shutil.rmtree(out_folder)                                                                   # try to remove folder
             os.mkdir(out_folder)
+            print("Done.")
     else:
         os.mkdir(out_folder)                                                                            # if it never existed, make it.  
                                                                                            
@@ -216,7 +217,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     if create_all_ifgs_flag:
         print(f"Creating all possible interferogram pairs from the incremental interferograms...", end = '')
         mixtures_incremental = np.copy(mixtures)                                                                                # make a copy of the originals that we can use to calculate the time courses.  
-        mixtures_incremental_mc = mixtures_incremental - np.mean(mixtures_incremental, axis = 1)[:, np.newaxis]
+        mixtures_incremental_mc = mixtures_incremental - np.mean(mixtures_incremental, axis = 1)[:, np.newaxis]                 # mean centre the mixtures (i.e. the mean of each image is 0, so removes the effect of a reference pixel)
         mixtures, ifg_dates = create_all_ifgs(mixtures_incremental, spatial_data['ifg_dates'])                               # if ifg_dates is None, None is also returned.  
         print(" Done!")
     if (spatial) and (ifg_dates is not None):
@@ -235,7 +236,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     else:
         x_decorrelate_rs = x_decorrelate[:n_comp,:]                                                                            # truncate to desirec number of components
         PC_vecs_rs =  PC_vecs[:,:n_comp]
-        
+    print('Done!')    
     if fig_kwargs['figures'] != "none":
         plot_pca_variance_line(PC_vals, title = '01_PCA_variance_line', **fig_kwargs)
         if spatial:
@@ -244,7 +245,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
                                            {'temporal_baselines' : temporal_baselines, 'tcs' : PC_vecs_rs}, fig_title = '03_PCA_source_correlations')
         else:
             plot_temporal_signals(x_decorrelate_rs, '02_PCA_sources', **fig_kwargs)
-    print('Done!')
+    
    
     
     # 2: Make or load the results of the multiple ICA runs.  
@@ -255,8 +256,9 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
                 S_hist = pickle.load(f)   
                 A_hist = pickle.load(f)
         except:
-            raise Exception(f"Failed to open the results from the previous runs of FastICA.  Perhaps load_fastICA_results should be set to False if they don't exist?  Exiting.   ")
-    else:
+            print(f"Failed to open the results from the previous runs of FastICA.  Switching 'load_fastICA_results' to False and trying to continue anyway.  ")
+            load_fastICA_results = False
+    if not load_fastICA_results:
        print(f"No results were found for the multiple ICA runs, so these will now be performed.  ")
        S_hist, A_hist = perform_multiple_ICA_runs(n_comp, mixtures_mc, bootstrapping_param, ica_param,
                                                   x_white, PC_dewhiten_mat, ica_verbose) 
@@ -290,14 +292,14 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         spatial_data_S_all = {'images_r3' : sources_all_r3}                                                                                            # spatial data stored in rank 3 format (ie n_imaces x height x width)
         plot_2d_interactive_fig(xy_tsne.T, colours = labels_colours, spatial_data = spatial_data_S_all,                                                # make the 2d interactive plot
                                 labels = plot_2d_labels, legend = legend_dict, markers = marker_dict, inset_axes_side = inset_axes_side,
-                                fig_filename = '03_clustering_and_manifold_results', **fig_kwargs)
+                                fig_filename = plot_2d_labels['title'], **fig_kwargs)
     
     else:
         temporal_data_S_all = {'tcs_r2' : sources_all_r2,
                                'xvals'  : temporal_data['xvals'] }                                                                               # make a dictionary of the sources recovered from each run
         plot_2d_interactive_fig(xy_tsne.T, colours = labels_colours, temporal_data = temporal_data_S_all,                                        # make the 2d interactive plot
                                 labels = plot_2d_labels, legend = legend_dict, markers = marker_dict, inset_axes_side = inset_axes_side,
-                                fig_filename = '03_clustering_and_manifold_results', **fig_kwargs)
+                                fig_filename = plot_2d_labels['title'], **fig_kwargs)
 
     Iq_sorted = np.sort(Iq)[::-1]               
     n_clusters = S_best.shape[0]                                                                     # the number of sources/centrotypes is equal to the number of clusters    
@@ -408,7 +410,7 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
     import pathlib
     #from pathlib import Path
     
-    from auxiliary_functions_from_other_repos import add_square_plot
+    from icasar.aux2 import add_square_plot
     
     
 
@@ -491,7 +493,7 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
             2020/02/16 | MEG | Documented 
         """
         from datetime import datetime
-        
+                
         baselines = []
         for file in names_list:
             master = datetime.strptime(file.split('_')[-2], '%Y%m%d')   
@@ -610,7 +612,7 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
         print(f"Failed to open the 'slc.mli.par' file, so taking the width and length of the image from the h5 file and trying to continue.  ")
         (_, length, width) = cumulative.shape
        
-    # 4: get the DEM
+    # 5: get the DEM
     try:
         dem = read_img(LiCSBAS_out_folder / LiCSBAS_folders['ifgs'] / 'hgt', length, width)
         displacement_r2['dem'] = dem                                                                      # and added to the displacement dict in the same was as the lons and lats
@@ -618,8 +620,16 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
     except:
         print(f"Failed to open the DEM from the hgt file for this volcano, but trying to continue anyway.")
     
+    # 6: Get the E N U files (these are the components of the ground to satellite look vector in east north up directions.  )   
+    try:
+        for component in ['E', 'N', 'U']:
+            look_vector_component = read_img(LiCSBAS_out_folder / LiCSBAS_folders['ifgs'] / f"{component}.geo", length, width)
+            displacement_r2[component] = look_vector_component
+            displacement_r3[component] = look_vector_component
+    except:
+        print(f"Failed to open the E N U files (look vector components), but trying to continue anyway.")
         
-    
+
     # if crop_pixels is not None:
     #     print(f"Cropping the images in x from {crop_pixels[0]} to {crop_pixels[1]} "
     #           f"and in y from {crop_pixels[2]} to {crop_pixels[3]} (NB matrix notation - 0,0 is top left.  ")
@@ -661,7 +671,7 @@ def update_mask_sources_ifgs(mask_sources, sources, mask_ifgs, ifgs):
     """
     import numpy as np
     import numpy.ma as ma
-    from auxiliary_functions import col_to_ma
+    from icasar.aux import col_to_ma
 
         
     
@@ -899,8 +909,8 @@ def bootstrap_ICA(X, n_comp, bootstrap = True, ica_param = (1e-4, 150),
     
     """
     import numpy as np
-    from blind_signal_separation_funcitons import PCA_meg2, fastica_MEG
-    from auxiliary_functions import  maps_tcs_rescale
+    from icasar.blind_signal_separation import PCA_meg2, fastica_MEG
+    from icasar.aux import  maps_tcs_rescale
     
     n_loop_max = 1000                                                               # when trying to make bootstrapped samples, if one can't be found after this many attempts, raise an error.  Best left high.  
     
@@ -989,7 +999,7 @@ def sources_list_to_r2_r3(sources, mask = None):
     """
     import numpy as np
     import numpy.ma as ma
-    from auxiliary_functions import col_to_ma
+    from icasar.aux import col_to_ma
     
     
     n_converge_needed = len(sources)

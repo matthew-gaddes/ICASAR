@@ -28,7 +28,7 @@ def dem_and_temporal_source_figure(sources, sources_mask, fig_kwargs, dem = None
     import numpy as np
     import numpy.ma as ma
     
-    from auxiliary_functions_from_other_repos import update_mask_sources_ifgs
+    from icasar.aux2 import update_mask_sources_ifgs
     
     if dem is not None:
         dem_ma = ma.masked_invalid(dem)                                                                                                             # LiCSBAS dem uses nans, but lets switch to a masked array (with nans masked)
@@ -120,8 +120,8 @@ def plot_source_tc_correlations(sources, mask, dem = None, dem_to_ic_comparisons
     """
     import numpy as np
     import matplotlib.pyplot as plt
-    from auxiliary_functions import col_to_ma
-    from auxiliary_functions_from_other_repos import remappedColorMap, truncate_colormap
+    from icasar.aux import col_to_ma
+    from icasar.aux2 import remappedColorMap, truncate_colormap
 
     n_sources = sources.shape[0]
 
@@ -321,7 +321,7 @@ def create_all_ifgs(ifgs_r2, ifg_dates):
     """
     import numpy as np
     from datetime import datetime, timedelta
-    from auxiliary_functions_from_other_repos import acquisitions_from_ifg_dates
+    from icasar.aux2 import acquisitions_from_ifg_dates
     
     def triange_lower_left_indexes(side_length):
         """ For a square matrix of size side_length, get the index of all the values that are in the lower
@@ -382,14 +382,14 @@ def create_all_ifgs(ifgs_r2, ifg_dates):
         n_acq = ifgs_r2_temp.shape[0] + 1
         
         # 2a: convert from daisy chain of incremental to a relative to a single master at the start of the time series.  
-        acq1_def = np.zeros((1, n_pixs))                                                # deformation is 0 at the first acquisition
+        acq1_def = np.zeros((1, n_pixs))                                                     # deformation is 0 at the first acquisition
         ifgs_cs = np.cumsum(ifgs_r2_temp, axis = 0)                                          # convert from incremental to cumulative.  
-        ifgs_cs = np.vstack((acq1_def, ifgs_cs))
+        ifgs_cs = np.vstack((acq1_def, ifgs_cs))                                             # add the 0 at first time ifg to the other cumulative ones. 
         
         # 2b: create all possible ifgs
         ifgs_cube = np.zeros((n_acq, n_acq, n_pixs))                                    # cube to store all possible ifgs in
-        for i in range(n_acq):                                                          # loop through each column and add the ifgs.  
-            ifgs_cube[:,i,] = ifgs_cs - ifgs_cs[i,]
+        for i in range(n_acq):                                                          # used to loop through each column
+            ifgs_cube[:,i,] = ifgs_cs - ifgs_cs[i,]                                     # make one column (ie all the rows) by taking all the ifgs and subtracting one time from it
            
         # 2c: Get only the positive ones (ie the lower left quadrant)    
         lower_left_indexes = triange_lower_left_indexes(n_acq)                              # get the indexes of the ifgs in the lower left corner (ie. non 0, and with unreveresed deformation.  )
@@ -446,7 +446,7 @@ def plot_spatial_signals(spatial_map, pixel_mask, timecourse, shape, title, shar
     import matplotlib.pyplot as plt
     import matplotlib
     
-    from auxiliary_functions_from_other_repos import remappedColorMap, truncate_colormap
+    from icasar.aux2 import remappedColorMap, truncate_colormap
     
     def linegraph(sig, ax, temporal_baselines = None):
         """ signal is a 1xt row vector """
@@ -667,7 +667,7 @@ def bss_components_inversion(sources, interferograms):
     
     Inputs:
         sources | n_sources x pixels | ie architecture I.  Mean centered
-        interferogram | n_ifgs x pixels | Doesn't have to be mean centered
+        interferogram | list of (n_ifgs x pixels) | Doesn't have to be mean centered, multiple interferograms to be fit can be fit by making the list as long as required.  
         
     Outputs:
         m | rank 1 array | the strengths with which to use each source to reconstruct the ifg.  

@@ -228,7 +228,7 @@ def update_mask_sources_ifgs(mask_sources, sources, mask_ifgs, ifgs):
     """
     import numpy as np
     import numpy.ma as ma
-    from auxiliary_functions import col_to_ma
+    from icasar.aux import col_to_ma
 
         
     
