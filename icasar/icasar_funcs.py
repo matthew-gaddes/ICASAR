@@ -109,7 +109,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     from icasar.aux2 import plot_2d_interactive_fig, baseline_from_names, update_mask_sources_ifgs
 
 
-    # Check inputs, unpack either spatial or temporal data, and check for nans
+    # -9 Check inputs, unpack either spatial or temporal data, and check for nans
     if temporal_data is None and spatial_data is None:                                                                  # check inputs
         raise Exception("One of either spatial or temporal data must be supplied.  Exiting.  ")
     if temporal_data is not None and spatial_data is not None:
@@ -130,7 +130,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     if np.max(np.isnan(mixtures)):
         raise Exception("Unable to proceed as the data ('phUnw') contains Nans.  ")
                         
-    # sort out various things for figures, and check input is of the correct form
+    #-8:  sort out various things for figures, and check input is of the correct form
     if type(out_folder) == str:
         print(f"Trying to conver the 'out_folder' arg which is a string to a pathlib Path.  ")
         out_folder = Path(out_folder)
@@ -141,7 +141,8 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         pass
     else:
         raise ValueError("'figures' should be 'window', 'png', 'png+window', or 'None'.  Exiting...")
-        
+    
+    # -7: Check argument
     if ica_verbose == 'long':
         fastica_verbose = True
     elif ica_verbose == 'short':
@@ -152,6 +153,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         fastica_verbose = False
 
     
+    # -6: Determine if we have both lons and lats and so can geocode the ICs (ge_kmz = True), and check both rank 2
     if spatial_data is not None:                                                                                      # if we're working with spatial data, we should check lons and lats as they determine if the ICs will be geocoded.  
         if ('lons' in spatial_data) and ('lats' in spatial_data):                                                       # 
             print(f"As 'lons' and 'lats' have been provided, the ICs will be geocoded.  ")
@@ -167,23 +169,26 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     else:
         ge_kmz = False                                                                                              # if there's no spatial data, assume that we must be working with temporal.  
             
-    
+    # -5: Check the temporal dimension of the time series and the ifg_dates agree
     if spatial_data is not None:                                                                                      # if we're working with spatial data, we should check the ifgs and acq dates are the correct lengths as these are easy to confuse.  
         if ifg_dates is not None:
             n_ifgs = spatial_data['mixtures_r2'].shape[0]                                                               # get the number of incremental ifgs
             if n_ifgs != len(spatial_data['ifg_dates']):                                                                # and check it's equal to the list of ifg dates (YYYYMMDD_YYYYMMDD)
                 raise Exception(f"There should be an equal number of incremental interferogram and dates (in the form YYYYMMDD_YYYYMMDD), but they appear to be different.  Exiting...")
     
+    # -4: Check the sizes of the spatial data inputs, and assign None to the DEM if it doesn't exist
     if spatial_data is not None:                                                                                      # if we're working with spatial data
         spatial_data_r2_arrays = ['mask', 'dem', 'lons', 'lats']                                                      # we need to check the spatial data is the correct resolution (ie all the same)
         spatial_data_r2_arrays_present = list(spatial_data.keys())                                                      # we alse need to determine which of these spatial data we actually have.  
         spatial_data_r2_arrays = [i for i in spatial_data_r2_arrays if i in spatial_data_r2_arrays_present]             # remove any from the check list incase they're not provided.  
-            
         for spatial_data_r2_array1 in spatial_data_r2_arrays:                                                           # first loop through each spatial data
             for spatial_data_r2_array2 in spatial_data_r2_arrays:                                                       # second loo through each spatial data
                 if spatial_data[spatial_data_r2_array1].shape != spatial_data[spatial_data_r2_array2].shape:            # check the size is equal
                     raise Exception(f"All the spatial data should be the same size, but {spatial_data_r2_array1} is of shape {spatial_data[spatial_data_r2_array1].shape}, "
                                     f"and {spatial_data_r2_array2} is of shape {spatial_data[spatial_data_r2_array2].shape}.  Exiting.")
+        if 'dem' not in spatial_data_r2_arrays_present:
+            spatial_data['dem'] = None
+        
         
     # -3: Possibly change the matplotlib backend.  
     if figures == 'png':
@@ -369,7 +374,8 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
 #%%
 
 
-def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_cols=5, crop_pixels = None, return_r3 = False):
+def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_cols=5, crop_pixels = None, return_r3 = False, 
+                      ref_area = False):
     """ A function to prepare the outputs of LiCSBAS for use with LiCSALERT.
     LiCSBAS uses nans for masked areas - here these are converted to masked arrays.   Can also create three figures: 1) The Full LiCSBAS ifg, and the area
     that it has been cropped to 2) The cumulative displacement 3) The incremental displacement.  
@@ -382,12 +388,15 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
                                 x_start, x_stop, y_start, y_stop, No checking that inputted values make sense.  
                                 Note, generally better to have cropped (cliped in LiCSBAS language) to the correct area in LiCSBAS_for_LiCSAlert
         return_r3 | boolean | if True, the rank 3 data is also returns (n_ifgs x height x width).  Not used by ICASAR, so default is False
+        ref_area | boolean | If True, the reference area (in pixels, x then y) used by LiCSBAS is extracted and returned to the user.  
 
     Outputs:
         displacment_r3 | dict | Keys: cumulative, incremental.  Stored as masked arrays.  Mask should be consistent through time/interferograms
                                 Also lons and lats, which are the lons and lats of all pixels in the images (ie rank2, and not column or row vectors)    
+                                Also Dem, mask, and  E N U (look vector components in east north up diretcion)
         displacment_r2 | dict | Keys: cumulative, incremental, mask.  Stored as row vectors in arrays.  
                                 Also lons and lats, which are the lons and lats of all pixels in the images (ie rank2, and not column or row vectors)    
+                                Also Dem, mask, and  E N U (look vector components in east north up diretcion)
         tbaseline_info | dict| imdates : acquisition dates as strings
                               daisy_chain : names of the daisy chain of ifgs, YYYYMMDD_YYYYMMDD
                               baselines : temporal baselines of incremental ifgs
@@ -399,6 +408,8 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
     2021/04/15 | MEG | Update lons and lats to be packaged into displacement_r2 and displacement_r3
     2021_04_16 | MEG | Add option to also open the DEM that is in the .hgt file.  
     2021_05_07 | MEG | Change the name of baseline_info to tbaseline_info to be consistent with LiCSAlert
+    2021_09_22 | MEG | Add functionality to extract the look vector componenets (ENU files)
+    2021_09_23 | MEG | Add option to extract where the LiCSBAS reference area is.  
     """
 
     import h5py as h5
@@ -575,6 +586,15 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
         cumh5 = h5.File(LiCSBAS_out_folder / LiCSBAS_folders['TS_'] / 'cum.h5' ,'r')                            # or the non filtered file from LiCSBAS
     tbaseline_info["acq_dates"] = cumh5['imdates'][()].astype(str).tolist()                                        # get the acquisition dates
     cumulative = cumh5['cum'][()]                                                                                # get cumulative displacements as a rank3 numpy array
+    cumulative *= 0.001                                                                                             # LiCSBAS default is mm, convert to m
+    
+    if ref_area:
+     ref_str = cumh5['refarea'][()] 
+     ref_xy = {'x_start' : int(ref_str.split('/')[0].split(':')[0]),                                            # convert the correct part of the string to an integer
+               'x_stop' : int(ref_str.split('/')[0].split(':')[1]),
+               'y_start' : int(ref_str.split('/')[1].split(':')[0]),
+               'y_stop' : int(ref_str.split('/')[1].split(':')[1])}
+     
     
     # 2: Mask the data  
     mask_coh_water = np.isnan(cumulative)                                                                       # get where masked
@@ -648,9 +668,15 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
     
 
     if return_r3:
-        return displacement_r3, displacement_r2, tbaseline_info
+        if ref_area:
+            return displacement_r3, displacement_r2, tbaseline_info, ref_xy
+        else:
+            return displacement_r3, displacement_r2, tbaseline_info
     else:
-        return displacement_r2, tbaseline_info
+        if ref_area:
+            return displacement_r2, tbaseline_info, ref_xy
+        else:
+            return displacement_r2, tbaseline_info
 
 #%%
 def update_mask_sources_ifgs(mask_sources, sources, mask_ifgs, ifgs):
