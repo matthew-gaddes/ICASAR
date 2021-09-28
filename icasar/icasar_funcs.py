@@ -410,6 +410,7 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
     2021_05_07 | MEG | Change the name of baseline_info to tbaseline_info to be consistent with LiCSAlert
     2021_09_22 | MEG | Add functionality to extract the look vector componenets (ENU files)
     2021_09_23 | MEG | Add option to extract where the LiCSBAS reference area is.  
+    2021_09_28 | MEG | Fix cropping option.  
     """
 
     import h5py as h5
@@ -422,6 +423,7 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
     #from pathlib import Path
     
     from icasar.aux2 import add_square_plot
+    from icasar.aux import col_to_ma
     
     
 
@@ -589,11 +591,11 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
     cumulative *= 0.001                                                                                             # LiCSBAS default is mm, convert to m
     
     if ref_area:
-     ref_str = cumh5['refarea'][()] 
-     ref_xy = {'x_start' : int(ref_str.split('/')[0].split(':')[0]),                                            # convert the correct part of the string to an integer
-               'x_stop' : int(ref_str.split('/')[0].split(':')[1]),
-               'y_start' : int(ref_str.split('/')[1].split(':')[0]),
-               'y_stop' : int(ref_str.split('/')[1].split(':')[1])}
+       ref_str = cumh5['refarea'][()] 
+       ref_xy = {'x_start' : int(ref_str.split('/')[0].split(':')[0]),                                            # convert the correct part of the string to an integer
+                 'x_stop' : int(ref_str.split('/')[0].split(':')[1]),
+                 'y_start' : int(ref_str.split('/')[1].split(':')[0]),
+                 'y_stop' : int(ref_str.split('/')[1].split(':')[1])}
      
     
     # 2: Mask the data  
@@ -604,9 +606,9 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
         displacement_r3["incremental"].mask = mask_coh_water[1:]                                                # in which case, we can recreate the mask from the rank3 mask, but dropping one from the first dimension as incremental is always one smaller than cumulative.  
     n_im, length, width = displacement_r3["cumulative"].shape                                   
 
-    if figures:                                                 
-        ts_quick_plot(displacement_r3["cumulative"], title = 'Cumulative displacements')
-        ts_quick_plot(displacement_r3["incremental"], title = 'Incremental displacements')
+    # if figures:                                                 
+    #     ts_quick_plot(displacement_r3["cumulative"], title = 'Cumulative displacements')
+    #     ts_quick_plot(displacement_r3["incremental"], title = 'Incremental displacements')
 
     displacement_r2['cumulative'], displacement_r2['mask'] = rank3_ma_to_rank2(displacement_r3['cumulative'])      # convert from rank 3 to rank 2 and a mask
     displacement_r2['incremental'], _ = rank3_ma_to_rank2(displacement_r3['incremental'])                          # also convert incremental, no need to also get mask as should be same as above
@@ -649,23 +651,50 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
     except:
         print(f"Failed to open the E N U files (look vector components), but trying to continue anyway.")
         
-
-    # if crop_pixels is not None:
-    #     print(f"Cropping the images in x from {crop_pixels[0]} to {crop_pixels[1]} "
-    #           f"and in y from {crop_pixels[2]} to {crop_pixels[3]} (NB matrix notation - 0,0 is top left.  ")
-    #     cumulative = cumulative_uncropped[:, crop_pixels[2]:crop_pixels[3], crop_pixels[0]:crop_pixels[1]]                        # note rows first (y), then columns (x)
-    #     if figures:
-    #         ifg_n_plot = 1                                                                                      # which number ifg to plot.  Shouldn't need to change.  
-    #         title = f'Cropped region, ifg {ifg_n_plot}'
-    #         fig_crop, ax = plt.subplots()
-    #         fig_crop.canvas.set_window_title(title)
-    #         ax.set_title(title)
-    #         ax.imshow(cumulative_uncropped[ifg_n_plot, :,:],interpolation='none', aspect='auto')                # plot the uncropped ifg
-    #         add_square_plot(crop_pixels[0], crop_pixels[1], crop_pixels[2], crop_pixels[3], ax)                 # draw a box showing the cropped region    
-  
-    # else:
-    #     cumulative = cumulative_uncropped
+    if crop_pixels is not None:
+        print(f"Cropping the images in x from {crop_pixels[0]} to {crop_pixels[1]} "
+              f"and in y from {crop_pixels[2]} to {crop_pixels[3]} (NB matrix notation - 0,0 is top left).  ")
+        
+        if figures:
+            ifg_n_plot = 1                                                                                      # which number ifg to plot.  Shouldn't need to change.  
+            title = f'Cropped region, ifg {ifg_n_plot}'
+            fig_crop, ax = plt.subplots()
+            fig_crop.canvas.set_window_title(title)
+            ax.set_title(title)
+            ax.imshow(col_to_ma(displacement_r2['incremental'][ifg_n_plot,:], displacement_r2['mask']),
+                                interpolation='none', aspect='auto')                                            # plot the uncropped ifg
+        
+        for product in displacement_r3:
+            if len(displacement_r3[product].shape) == 2:                                                                                  # if it's a rank 2, assume only x, y
+                    displacement_r3[product] = displacement_r3[product][crop_pixels[2]:crop_pixels[3], crop_pixels[0]:crop_pixels[1]]               # and crop
+            elif len(displacement_r3[product].shape) == 3:                                                                                # if it's a rank 3, assume times, x, y
+                    displacement_r3[product] = displacement_r3[product][:, crop_pixels[2]:crop_pixels[3], crop_pixels[0]:crop_pixels[1]]            # and crop only last two dimensions
+            else:
+                pass
+        from copy import deepcopy    
+        displacment_r2 = deepcopy(displacement_r3)
+        displacement_r2['cumulative'], displacement_r2['mask'] = rank3_ma_to_rank2(displacement_r3['cumulative'])      # convert from rank 3 to rank 2 and a mask
+        displacement_r2['incremental'], _ = rank3_ma_to_rank2(displacement_r3['incremental'])                          # also convert incremental, no need to also get mask as should be same as above
     
+
+        # for product in displacement_r3:
+        #     print(f"{product} : {displacement_r3[product].shape}")
+        
+        # import pdb; pdb.set_trace()
+        # for disp_dict in [displacement_r2, displacement_r3]:
+        #     for product in disp_dict:
+        #         if len(disp_dict[product].shape) == 2:                                                                                  # if it's a rank 2, assume only x, y
+        #             disp_dict[product] = disp_dict[product][crop_pixels[2]:crop_pixels[3], crop_pixels[0]:crop_pixels[1]]               # and crop
+        #         elif len(disp_dict[product].shape) == 3:                                                                                # if it's a rank 3, assume times, x, y
+        #             disp_dict[product] = disp_dict[product][:, crop_pixels[2]:crop_pixels[3], crop_pixels[0]:crop_pixels[1]]            # and crop only last two dimensions
+        #         else:
+        #             pass
+    
+
+        if figures:
+            add_square_plot(crop_pixels[0], crop_pixels[1], crop_pixels[2], crop_pixels[3], ax)                 # draw a box showing the cropped region    
+  
+   
 
     if return_r3:
         if ref_area:
