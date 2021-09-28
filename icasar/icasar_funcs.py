@@ -664,17 +664,19 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
             ax.imshow(col_to_ma(displacement_r2['incremental'][ifg_n_plot,:], displacement_r2['mask']),
                                 interpolation='none', aspect='auto')                                            # plot the uncropped ifg
         
+        #import pdb; pdb.set_trace()
         for product in displacement_r3:
             if len(displacement_r3[product].shape) == 2:                                                                                  # if it's a rank 2, assume only x, y
-                    displacement_r3[product] = displacement_r3[product][crop_pixels[2]:crop_pixels[3], crop_pixels[0]:crop_pixels[1]]               # and crop
+                resized_r2 = displacement_r3[product][crop_pixels[2]:crop_pixels[3], crop_pixels[0]:crop_pixels[1]]               # and crop
+                displacement_r2[product] = resized_r2
+                displacement_r3[product] = resized_r2
             elif len(displacement_r3[product].shape) == 3:                                                                                # if it's a rank 3, assume times, x, y
-                    displacement_r3[product] = displacement_r3[product][:, crop_pixels[2]:crop_pixels[3], crop_pixels[0]:crop_pixels[1]]            # and crop only last two dimensions
+                resized_r3 = displacement_r3[product][:, crop_pixels[2]:crop_pixels[3], crop_pixels[0]:crop_pixels[1]]            # and crop only last two dimensions
+                displacement_r3[product] = resized_r3
+                displacement_r2[product], displacement_r2['mask'] = rank3_ma_to_rank2(resized_r3)      # convert from rank 3 to rank 2 and a mask
             else:
                 pass
-        from copy import deepcopy    
-        displacment_r2 = deepcopy(displacement_r3)
-        displacement_r2['cumulative'], displacement_r2['mask'] = rank3_ma_to_rank2(displacement_r3['cumulative'])      # convert from rank 3 to rank 2 and a mask
-        displacement_r2['incremental'], _ = rank3_ma_to_rank2(displacement_r3['incremental'])                          # also convert incremental, no need to also get mask as should be same as above
+            
     
 
         # for product in displacement_r3:
