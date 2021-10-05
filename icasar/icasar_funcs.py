@@ -108,6 +108,9 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     from icasar.aux import prepare_point_colours_for_2d, prepare_legends_for_2d, create_all_ifgs, signals_to_master_signal_comparison, plot_source_tc_correlations
     from icasar.aux2 import plot_2d_interactive_fig, baseline_from_names, update_mask_sources_ifgs
 
+    # -1: Check for an unusual combination of inputs:
+    if (create_all_ifgs_flag) and ('ifg_dates' not in spatial_data.keys()):
+            raise Exception(f"'ifg_dates' (in the form yyyymmdd_yyyymmdd) are usually optional, but not if the 'create_all_ifgs_flag' is set to True.  Exiting.  " )
 
     # -9 Check inputs, unpack either spatial or temporal data, and check for nans
     if temporal_data is None and spatial_data is None:                                                                  # check inputs
@@ -188,7 +191,6 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
                                     f"and {spatial_data_r2_array2} is of shape {spatial_data[spatial_data_r2_array2].shape}.  Exiting.")
         if 'dem' not in spatial_data_r2_arrays_present:
             spatial_data['dem'] = None
-        
         
     # -3: Possibly change the matplotlib backend.  
     if figures == 'png':
