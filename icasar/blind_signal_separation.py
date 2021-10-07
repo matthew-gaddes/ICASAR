@@ -257,9 +257,8 @@ def fastica_MEG(X, n_comp=None,
 
 def PCA_meg2(X, verbose = False, return_dewhiten = True):
     """
-    
     Input:
-        X | array | rows are dimensions (e.g. 2 x 1000 normally for 2 sound recordings, or eg 225x12 for 12 15x15 pixel images)
+        X | array | rows are dimensions (e.g. 2 x 1000 normally for 2 sound recordings, or eg 12x225 for 12 15x15 pixel images)
                     Doesn't have to be mean centered
         verbose | boolean | if true, prints some info to the screen.  
         return_dewhiten | boolean | if False, doesn't return the dewhitening matrix as the pseudo inverse needed to calculate this can fail with very large matrices (e.g. 1e6)
@@ -285,6 +284,7 @@ def PCA_meg2(X, verbose = False, return_dewhiten = True):
     2018/02/23 | MEG | add option to no return the dewhitening matrix as the pseudo inverse needed for this can fail with 
                        very large matrices.  
     2020/06/09 | MEG | Add a raise Exception so that data cannot have nans in it.  
+    2021_10_07 | MEG | Add raise Exception for the case that negative eignevalues are returned.  
     """
     
     import numpy as np
@@ -298,14 +298,19 @@ def PCA_meg2(X, verbose = False, return_dewhiten = True):
     dims, samples = X.shape
     X = X - X.mean(axis=1)[:,np.newaxis]                # mean center each row (ie dimension)
 
-    if samples < dims and dims > 100:                   # do PCA using the compact trick
+    if samples < dims and dims > 100:                   # do PCA using the compact trick (i.e. if there are more dimensions than samples, there will only ever be sample -1 PC [imagine a 3D space with 2 points.  There is a vector joining the points, one orthogonal to that, but then there isn't a third one])
+        import pdb; pdb.set_trace()
         if verbose:
             print('There are more samples than dimensions and more than 100 dimension so using the compact trick.')
-        M = (1/samples) * X.T @ X           # maximum liklehood covariance matrix.  See blog post for details on (samples) or (samples -1): https://lazyprogrammer.me/covariance-matrix-divide-by-n-or-n-1/
-        e,EV = np.linalg.eigh(M)           # eigenvalues and eigenvectors    
-        tmp = (X @ EV)                     # this is the compact trick
-        vecs = tmp[:,::-1]                    # vectors are columns, make first (left hand ones) the important onces
-        vals = np.sqrt(e)[::-1]               # also reverse the eigenvectors
+        M = (1/samples) * X.T @ X                                        # maximum liklehood covariance matrix.  See blog post for details on (samples) or (samples -1): https://lazyprogrammer.me/covariance-matrix-divide-by-n-or-n-1/
+        e,EV = np.linalg.eigh(M)                                         # eigenvalues and eigenvectors.  Note that in some cases this function can return negative eigenvalues (e)    
+        if np.min(e) < 0:
+            raise Exception(f"There are negative values in the eigenvalues.  This is a tricky problem, but is usually a product of using far more interferograms than pixels.  "
+                            f"E.g. a time series of 1000 ifgs with 500 pixels, but it would be much more normal to have 100 ifgs and 50000 pixels. ")
+        tmp = (X @ EV)                                                   # this is the compact trick
+        vecs = tmp[:,::-1]                                               # vectors are columns, make first (left hand ones) the important onces
+        vals = np.sqrt(e)[::-1]                                          # also reverse the eigenvectors.  Note that with the negative eigen values that can be encoutered here, this produces nans.  
+        vals = np.nan_to_num(vals, nan = 0.0)               
         for i in range(vecs.shape[0]):        # normalise each eigenvector (ie change length to 1)
             vecs[i,:] /= vals
         vecs = vecs[:, 0:-1]                       # drop the last eigenvecto and value as it's not defined.            
@@ -323,7 +328,7 @@ def PCA_meg2(X, verbose = False, return_dewhiten = True):
         vals_noOrder, vecs_noOrder = np.linalg.eigh(cov_mat)                    # vectors (vecs) are columns, not not ordered
         order = np.argsort(vals_noOrder)[::-1]                                  # get order of eigenvalues descending
         vals = vals_noOrder[order]                                              # reorder eigenvalues
-        vals = np.abs(vals)                                                     # do to floatint point arithmetic some tiny ones can be nagative which is problematic with the later square rooting
+        vals = np.abs(vals)                                                        # do to floatint point arithmetic some tiny ones can be nagative which is problematic with the later square rooting
         vecs = vecs_noOrder[:,order]                                            # reorder eigenvectors
         vals_sqrt_mat = np.diag(np.reciprocal(np.sqrt(vals)))          # square roots of eigenvalues on diagonal of square matrix
         whiten_mat = vals_sqrt_mat @ vecs.T                            # eigenvectors scaled by 1/values to make variance same in all directions

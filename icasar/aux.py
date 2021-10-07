@@ -306,7 +306,7 @@ def signals_to_master_signal_comparison(signals, master_signal, density = False)
 
 #%%
 
-def create_all_ifgs(ifgs_r2, ifg_dates):
+def create_all_ifgs(ifgs_r2, ifg_dates, max_n_all_ifgs = 1000):
     """Given a rank 2 of incremental ifgs, calculate all the possible ifgs that still step forward in time (i.e. if deformation is positive in all incremental ifgs, 
     it remains positive in all the returned ifgs.)  If acquisition dates are provided, the tmeporal baselines of all the possible ifgs can also be found.  
     Inputs:
@@ -321,6 +321,7 @@ def create_all_ifgs(ifgs_r2, ifg_dates):
     """
     import numpy as np
     from datetime import datetime, timedelta
+    import random
     from icasar.aux2 import acquisitions_from_ifg_dates
     
     def triange_lower_left_indexes(side_length):
@@ -406,8 +407,17 @@ def create_all_ifgs(ifgs_r2, ifg_dates):
         dates_all_r1.append(ifg_dates_all_r1)
 
     # 3: convert lists back to a single matrix of all interferograms.  
-    ifgs_all_r2 = np.vstack(ifgs_all_r2)
-    dates_all_r1 = [item for sublist in dates_all_r1 for item in sublist]                                           # not clear how this works....
+    ifgs_all_r2 = np.vstack(ifgs_all_r2)                                                                            # now one big array of n_ifgs x n_pixels
+    dates_all_r1 = [item for sublist in dates_all_r1 for item in sublist]                                           # dates_all_r1 is a list (one for each connected network) of lists (each ifg date).  The turns them to a singe list.  
+    
+    # 4: Possibly delete some of these if we have too many:
+    if ifgs_all_r2.shape[0] > max_n_all_ifgs:
+        retained_args = np.arange(ifgs_all_r2.shape[0])
+        random.shuffle(retained_args)
+        retained_args = retained_args[:max_n_all_ifgs]
+        
+    ifgs_all_r2 = ifgs_all_r2[retained_args,:]
+    dates_all_r1 = [dates_all_r1[retained_arg] for retained_arg in retained_args]                                      # surely there is a better way to index a list with an array?  
     
     return ifgs_all_r2, dates_all_r1
 

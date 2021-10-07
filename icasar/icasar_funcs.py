@@ -10,7 +10,7 @@ Created on Tue May 29 11:23:10 2018
 def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window", 
            bootstrapping_param = (200,0), ica_param = (1e-4, 150), tsne_param = (30,12), hdbscan_param = (35,10),
            out_folder = './ICASAR_results/', ica_verbose = 'long', inset_axes_side = {'x':0.1, 'y':0.1}, 
-           create_all_ifgs_flag = False, load_fastICA_results = False):
+           create_all_ifgs_flag = False, max_n_all_ifgs = 1000, load_fastICA_results = False):
     """
     Perform ICASAR, which is a robust way of applying sICA to data.  As PCA is also performed as part of this,
     the sources and time courses found by PCA are also returned.  Note that this can be run with eitehr 1d data (e.g. time series for a GPS station),
@@ -52,6 +52,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
                                     in short temporal baseline ifgs).  
                                     e.g. for 3 interferogams between 4 acquisitions: a1__i1__a2__i2__a3__i3__a4
                                     This option would also make: a1__i4__a3, a1__i5__a4, a2__i6__a4
+        max_n_all_ifgs | If after creating all the ifgs there are more than this number, select only this many at random.  Useful as the number of ifgs created grows with the square of the number of ifgs.  
         load_fastICA_results | boolean | The multiple runs of FastICA are slow, so if now paramters are being changed here, previous runs can be reloaded.  
 
     Outputs:
@@ -78,6 +79,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         2020/09/16 | MEG | Update to clarify the names of whether variables contain mixtures or soruces.  
         2021/04/13 | MEG | Update so that lons and lats are now rank2 tensors (ie matrices with a lon or lat for each pixel)
         2021/04/13 | MEG | Add option to create_all_ifgs_from_incremental
+        2021_10_07 | MEG | Add option to limit the number of ifgs created from incremental. (e.g. if 5000 are generated but default value of 1000 is used, 1000 will be randomly chosen from the 5000)
     
     Stack overview:
         PCA_meg2                                        # do PCA
@@ -225,7 +227,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         print(f"Creating all possible interferogram pairs from the incremental interferograms...", end = '')
         mixtures_incremental = np.copy(mixtures)                                                                                # make a copy of the originals that we can use to calculate the time courses.  
         mixtures_incremental_mc = mixtures_incremental - np.mean(mixtures_incremental, axis = 1)[:, np.newaxis]                 # mean centre the mixtures (i.e. the mean of each image is 0, so removes the effect of a reference pixel)
-        mixtures, ifg_dates = create_all_ifgs(mixtures_incremental, spatial_data['ifg_dates'])                               # if ifg_dates is None, None is also returned.  
+        mixtures, ifg_dates = create_all_ifgs(mixtures_incremental, spatial_data['ifg_dates'], max_n_all_ifgs)                               # if ifg_dates is None, None is also returned.  
         print(" Done!")
     if (spatial) and (ifg_dates is not None):
         temporal_baselines = baseline_from_names(ifg_dates)
