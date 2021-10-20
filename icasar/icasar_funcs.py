@@ -80,6 +80,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         2021/04/13 | MEG | Update so that lons and lats are now rank2 tensors (ie matrices with a lon or lat for each pixel)
         2021/04/13 | MEG | Add option to create_all_ifgs_from_incremental
         2021_10_07 | MEG | Add option to limit the number of ifgs created from incremental. (e.g. if 5000 are generated but default value of 1000 is used, 1000 will be randomly chosen from the 5000)
+        2021_10_20 | MEG | Also save the 2d position of each source, and its HDBSSCAN label in the .pickle file.  
     
     Stack overview:
         PCA_meg2                                        # do PCA
@@ -346,6 +347,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
                                        {'temporal_baselines' : temporal_baselines, 'tcs' : tcs_all}, fig_title = '06_ICA_source_correlations')
         
 
+    import pdb; pdb.set_trace()
     # 11: Save the results: 
     print('Saving the key results as a .pkl file... ', end = '')                                            # note that we don't save S_all_info as it's a huge file.  
     if spatial:
@@ -356,6 +358,8 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
             pickle.dump(source_residuals, f)
             pickle.dump(Iq_sorted, f)
             pickle.dump(n_clusters, f)
+            pickle.dump(xy_tsne, f)
+            pickle.dump(labels_hdbscan, f)
         f.close()
         print("Done!")
     else:                                                                       # if temporal data, no mask to save
@@ -365,6 +369,8 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
             pickle.dump(source_residuals, f)
             pickle.dump(Iq_sorted, f)
             pickle.dump(n_clusters, f)
+            pickle.dump(xy_tsne, f)
+            pickle.dump(labels_hdbscan, f)
         f.close()
         print("Done!")
 
