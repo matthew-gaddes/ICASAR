@@ -15,9 +15,10 @@ from pathlib import Path
 import sys
 
 sys.path.append(str(Path('./lib/')))
+import icasar
+from icasar.icasar_funcs import ICASAR, LiCSBAS_to_ICASAR
+from icasar.aux import visualise_ICASAR_inversion
 
-from ICASAR_functions import ICASAR, LiCSBAS_to_ICASAR
-from auxiliary_functions import visualise_ICASAR_inversion
 
 
 
@@ -30,7 +31,7 @@ ICASAR_settings = {"n_comp" : 5,                                         # numbe
                    "hdbscan_param" : (100,10),                           # (min_cluster_size, min_samples) Discussed in more detail in Mcinnes et al. (2017). min_cluster_size sets the smallest collection of points that can be considered a cluster. min_samples sets how conservative the clustering is. With larger values, more points will be considered noise. 
                    "out_folder" : Path('example_spatial_02_outputs'),   # outputs will be saved here
                    "create_all_ifgs_flag" : True,                       # small signals are hard for ICA to extact from time series, so make it easier by creating all possible long temporal baseline ifgs from the incremental data.  
-                   "load_fastICA_results" : True,                      # If all the FastICA runs already exisit, setting this to True speeds up ICASAR as they don't need to be recomputed.  
+                   "load_fastICA_results" : False,                      # If all the FastICA runs already exisit, setting this to True speeds up ICASAR as they don't need to be recomputed.  
                    "figures" : "png+window"}                            # if png, saved in a folder as .png.  If window, open as interactive matplotlib figures,
                                                                          # if 'png+window', both.  
                                                                          # default is "window" as 03_clustering_and_manifold is interactive.  
@@ -49,8 +50,8 @@ print(f"Done.  ")
 
 spatial_data = {'mixtures_r2'    : displacement_r2['incremental'],
                 'mask'           : displacement_r2['mask'],
-                'ifg_dates'      : tbaseline_info['ifg_dates'],                           # in form YYYYMMDD_YYYYMMDD as a list of strings.  
-                'dem'            : displacement_r2['dem'],
+                'ifg_dates'      : tbaseline_info['ifg_dates'],                             # this is optional.  In the previous example, we didn't have it, in form YYYYMMDD_YYYYMMDD as a list of strings.  
+                'dem'            : displacement_r2['dem'],                                  # this is optional.  In the previous example, we didn't have it
                 'lons'           : displacement_r2['lons'],
                 'lats'           : displacement_r2['lats']}
                 

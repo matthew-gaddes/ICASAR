@@ -4,7 +4,7 @@ Created on Tue Feb 20 12:17:22 2018
 
 @author: eemeg
 
-An example of the ICASAR software with synthetic data
+An example of the ICASAR software with synthetic temporal data
 
 """
 
@@ -16,8 +16,9 @@ import matplotlib.pyplot as plt
 from scipy import signal
 import random
 
-from ICASAR_functions import ICASAR
-from auxiliary_functions import col_to_ma, r2_to_r3, plot_temporal_signals
+import icasar
+from icasar.icasar_funcs import ICASAR
+from icasar.aux import col_to_ma, r2_to_r3, plot_temporal_signals
 
 
 #%% Things to set

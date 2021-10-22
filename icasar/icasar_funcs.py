@@ -111,7 +111,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     from icasar.aux import prepare_point_colours_for_2d, prepare_legends_for_2d, create_all_ifgs, signals_to_master_signal_comparison, plot_source_tc_correlations
     from icasar.aux2 import plot_2d_interactive_fig, baseline_from_names, update_mask_sources_ifgs
 
-    # -1: Check for an unusual combination of inputs:
+    # -10: Check for an unusual combination of inputs:
     if (create_all_ifgs_flag) and ('ifg_dates' not in spatial_data.keys()):
             raise Exception(f"'ifg_dates' (in the form yyyymmdd_yyyymmdd) are usually optional, but not if the 'create_all_ifgs_flag' is set to True.  Exiting.  " )
 
@@ -192,8 +192,8 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
                 if spatial_data[spatial_data_r2_array1].shape != spatial_data[spatial_data_r2_array2].shape:            # check the size is equal
                     raise Exception(f"All the spatial data should be the same size, but {spatial_data_r2_array1} is of shape {spatial_data[spatial_data_r2_array1].shape}, "
                                     f"and {spatial_data_r2_array2} is of shape {spatial_data[spatial_data_r2_array2].shape}.  Exiting.")
-        if 'dem' not in spatial_data_r2_arrays_present:
-            spatial_data['dem'] = None
+        if 'dem' not in spatial_data_r2_arrays_present:                                                                  #  the dem is not compulsory
+            spatial_data['dem'] = None                                                                                    # so set it to None if not available.  
         
     # -3: Possibly change the matplotlib backend.  
     if figures == 'png':
@@ -229,9 +229,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         mixtures_incremental = np.copy(mixtures)                                                                                # make a copy of the originals that we can use to calculate the time courses.  
         mixtures_incremental_mc = mixtures_incremental - np.mean(mixtures_incremental, axis = 1)[:, np.newaxis]                 # mean centre the mixtures (i.e. the mean of each image is 0, so removes the effect of a reference pixel)
         mixtures, ifg_dates = create_all_ifgs(mixtures_incremental, spatial_data['ifg_dates'], max_n_all_ifgs)                               # if ifg_dates is None, None is also returned.  
-        print(" Done!")
-    if (spatial) and (ifg_dates is not None):
-        temporal_baselines = baseline_from_names(ifg_dates)
+        print(" Done!")          
     
     # 0: Mean centre the mixtures
     mixtures_mean = np.mean(mixtures, axis = 1)[:,np.newaxis]                                         # get the mean for each ifg (ie along rows.  )
@@ -251,8 +249,13 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         plot_pca_variance_line(PC_vals, title = '01_PCA_variance_line', **fig_kwargs)
         if spatial:
             plot_spatial_signals(x_decorrelate_rs.T, mask, PC_vecs_rs.T, mask.shape, title = '02_PCA_sources_and_tcs', shared = 1, **fig_kwargs)                      # the usual plot of the sources and their time courses (ie contributions to each ifg)                              
-            dem_and_temporal_source_figure(x_decorrelate_rs, spatial_data['mask'], fig_kwargs, spatial_data['dem'],                                                 # also compare the sources to the DEM, and the correlation between their time courses and the temporal baseline of each interferogram.  
-                                           {'temporal_baselines' : temporal_baselines, 'tcs' : PC_vecs_rs}, fig_title = '03_PCA_source_correlations')
+            if ifg_dates is not None:                                                                                                                       # if we have ifg_dates
+                temporal_baselines = baseline_from_names(ifg_dates)                                                                                         # we can use these to calcaulte temporal baselines
+                temporal_data = {'temporal_baselines' : temporal_baselines, 'tcs' : PC_vecs_rs}                                                             # and use them in the following figure
+            else:
+                temporal_data = None                                                                                                                        # but we might also not have them
+            dem_and_temporal_source_figure(x_decorrelate_rs, spatial_data['mask'], fig_kwargs, spatial_data['dem'],                                         # also compare the sources to the DEM, and the correlation between their time courses and the temporal baseline of each interferogram.  
+                                           temporal_data, fig_title = '03_PCA_source_correlations')
         else:
             plot_temporal_signals(x_decorrelate_rs, '02_PCA_sources', **fig_kwargs)
     
@@ -344,10 +347,9 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     # 8: Calculate the correlations between the DEM and the ICs, and the ICs time courses and the temporal baselines of the interferograms.  
     if (spatial_data is not None):
         dem_and_temporal_source_figure(S_best, spatial_data['mask'], fig_kwargs, spatial_data['dem'],                                                 # also compare the sources to the DEM, and the correlation between their time courses and the temporal baseline of each interferogram.  
-                                       {'temporal_baselines' : temporal_baselines, 'tcs' : tcs_all}, fig_title = '06_ICA_source_correlations')
+                                       temporal_data, fig_title = '06_ICA_source_correlations')
         
 
-    import pdb; pdb.set_trace()
     # 11: Save the results: 
     print('Saving the key results as a .pkl file... ', end = '')                                            # note that we don't save S_all_info as it's a huge file.  
     if spatial:

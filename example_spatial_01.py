@@ -14,8 +14,9 @@ import matplotlib.pyplot as plt
 import pickle                                    # used for opening synthetic data
 from pathlib import Path
 
-from ICASAR_functions import ICASAR
-from auxiliary_functions import col_to_ma, r2_to_r3
+import icasar
+from icasar.icasar_funcs import ICASAR
+from icasar.aux import col_to_ma, r2_to_r3
 
 
 #%% Things to set
@@ -75,12 +76,11 @@ fig3.canvas.set_window_title("Interferograms as row vectors and a mask")
 
 spatial_data = {'mixtures_r2' : phUnw,
                 'mask'        : pixel_mask,
-                'lons'        : lons,
-                'lats'        : lats}  
- 
+                'lons'        : lons,                                           # for the simplest case, these aren't needed
+                'lats'        : lats}                                           # for the simplest case, these aren't needed
+
 S_best, time_courses, x_train_residual_ts, Iq, n_clusters, S_all_info, phUnw_mean  = ICASAR(spatial_data = spatial_data, **ICASAR_settings) 
       
-
 
 #%% We can reconstruct the data using the sources and timecourses, but don't forget that ICA returns mean centered sources 
 
@@ -108,6 +108,11 @@ fig4.canvas.set_window_title("Reconstructed Data")
     
 ICASAR_settings["bootstrapping_param"] = (100, 100)               # (number of runs with bootstrapping, number of runs without bootstrapping)                  
 ICASAR_settings['out_folder'] = 'example_spatial_01_outputs_part2'
+
+spatial_data = {'mixtures_r2' : phUnw,
+                'mask'        : pixel_mask,
+                'lons'        : lons,
+                'lats'        : lats}  
                    
 S_best, time_courses, x_train_residual_ts, Iq, n_clusters, S_all_info, phUnw_mean  = ICASAR(spatial_data = spatial_data, **ICASAR_settings) 
 
