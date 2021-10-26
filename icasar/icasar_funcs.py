@@ -251,11 +251,11 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
             plot_spatial_signals(x_decorrelate_rs.T, mask, PC_vecs_rs.T, mask.shape, title = '02_PCA_sources_and_tcs', shared = 1, **fig_kwargs)                      # the usual plot of the sources and their time courses (ie contributions to each ifg)                              
             if ifg_dates is not None:                                                                                                                       # if we have ifg_dates
                 temporal_baselines = baseline_from_names(ifg_dates)                                                                                         # we can use these to calcaulte temporal baselines
-                temporal_data = {'temporal_baselines' : temporal_baselines, 'tcs' : PC_vecs_rs}                                                             # and use them in the following figure
+                temporal_data_pca = {'temporal_baselines' : temporal_baselines, 'tcs' : PC_vecs_rs}                                                             # and use them in the following figure
             else:
-                temporal_data = None                                                                                                                        # but we might also not have them
+                temporal_data_pca = None                                                                                                                        # but we might also not have them
             dem_and_temporal_source_figure(x_decorrelate_rs, spatial_data['mask'], fig_kwargs, spatial_data['dem'],                                         # also compare the sources to the DEM, and the correlation between their time courses and the temporal baseline of each interferogram.  
-                                           temporal_data, fig_title = '03_PCA_source_correlations')
+                                           temporal_data_pca, fig_title = '03_PCA_source_correlations')
         else:
             plot_temporal_signals(x_decorrelate_rs, '02_PCA_sources', **fig_kwargs)
     
@@ -346,6 +346,10 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
 
     # 8: Calculate the correlations between the DEM and the ICs, and the ICs time courses and the temporal baselines of the interferograms.  
     if (spatial_data is not None):
+        if ifg_dates is not None:                                                                                                                       # if we have ifg_dates
+            temporal_data_ica = {'temporal_baselines' : temporal_baselines, 'tcs' : tcs_all}                                                             # use them in the following figure.  Note that time courses here are from pca
+        else:
+            temporal_data_ica = None                                                                                                                        # but we might also not have them
         dem_and_temporal_source_figure(S_best, spatial_data['mask'], fig_kwargs, spatial_data['dem'],                                                 # also compare the sources to the DEM, and the correlation between their time courses and the temporal baseline of each interferogram.  
                                        temporal_data, fig_title = '06_ICA_source_correlations')
         
