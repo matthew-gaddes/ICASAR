@@ -346,12 +346,16 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
 
     # 8: Calculate the correlations between the DEM and the ICs, and the ICs time courses and the temporal baselines of the interferograms.  
     if (spatial_data is not None):
+        #import pdb; pdb.set_trace()
+        
         if ifg_dates is not None:                                                                                                                       # if we have ifg_dates
             spatial_data_temporal_info_ica = {'temporal_baselines' : temporal_baselines, 'tcs' : tcs_all}                                                             # use them in the following figure.  Note that time courses here are from pca
         else:
             spatial_data_temporal_info_ica = None                                                                                                                        # but we might also not have them
         dem_and_temporal_source_figure(S_best, spatial_data['mask'], fig_kwargs, spatial_data['dem'],                                                 # also compare the sources to the DEM, and the correlation between their time courses and the temporal baseline of each interferogram.  
                                        spatial_data_temporal_info_ica, fig_title = '06_ICA_source_correlations')
+        
+        
         
 
     # 11: Save the results: 
