@@ -278,6 +278,12 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
        with open(out_folder / 'FastICA_results.pkl', 'wb') as f:
             pickle.dump(S_hist, f)
             pickle.dump(A_hist, f)
+            
+    if S_hist[0].shape[1] != np.sum(1-spatial_data['mask']):
+        raise Exception(f"There are {S_hist[0].shape[1]} pixels in the ICASAR sources that have been loaded, but"
+                        f" {np.sum(1-spatial_data['mask'])} pixels in the current mask.  This normally happens when the"
+                        f" FastICA results that are being loaded are from a different set of data.  If not, something "
+                        f" is inconsitent with the mask and the coherent pixels.  Exiting.  ")
 
     
     # 3: Convert the sources from lists from each run to a single matrix.  
