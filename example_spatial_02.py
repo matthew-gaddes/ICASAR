@@ -14,7 +14,6 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 import sys
 
-sys.path.append(str(Path('./lib/')))
 import icasar
 from icasar.icasar_funcs import ICASAR, LiCSBAS_to_ICASAR
 from icasar.aux import visualise_ICASAR_inversion

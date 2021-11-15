@@ -401,7 +401,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
 
 
 def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_cols=5, crop_pixels = None, return_r3 = False, 
-                      ref_area = False):
+                      ref_area = True):
     """ A function to prepare the outputs of LiCSBAS for use with LiCSALERT.
     LiCSBAS uses nans for masked areas - here these are converted to masked arrays.   Can also create three figures: 1) The Full LiCSBAS ifg, and the area
     that it has been cropped to 2) The cumulative displacement 3) The incremental displacement.  
@@ -437,6 +437,7 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
     2021_09_22 | MEG | Add functionality to extract the look vector componenets (ENU files)
     2021_09_23 | MEG | Add option to extract where the LiCSBAS reference area is.  
     2021_09_28 | MEG | Fix cropping option.  
+    2021_11_15 | MEG | Use LiCSBAS reference pixel/area information to reference time series.  
     """
 
     import h5py as h5
@@ -615,14 +616,21 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
     tbaseline_info["acq_dates"] = cumh5['imdates'][()].astype(str).tolist()                                        # get the acquisition dates
     cumulative = cumh5['cum'][()]                                                                                # get cumulative displacements as a rank3 numpy array
     cumulative *= 0.001                                                                                             # LiCSBAS default is mm, convert to m
-    
+        
     if ref_area:
        ref_str = cumh5['refarea'][()] 
        ref_xy = {'x_start' : int(ref_str.split('/')[0].split(':')[0]),                                            # convert the correct part of the string to an integer
                  'x_stop' : int(ref_str.split('/')[0].split(':')[1]),
                  'y_start' : int(ref_str.split('/')[1].split(':')[0]),
                  'y_stop' : int(ref_str.split('/')[1].split(':')[1])}
-     
+    
+    try:                                                                                                                                                             # reference the time series
+        ifg_offsets = np.nanmean(cumulative[:, ref_xy['y_start']: ref_xy['y_stop'], ref_xy['x_start']: ref_xy['x_stop']], axis = (1,2))                              # get the offset between the reference pixel/area and 0 for each time
+        cumulative = cumulative - np.repeat(np.repeat(ifg_offsets[:,np.newaxis, np.newaxis], cumulative.shape[1],  axis = 1), cumulative.shape[2], axis = 2)         # do the correction (first make ifg_offsets teh same size as cumulative).      
+    except:
+        print(f"Failed to reference the LiCSBAS time series - use with caution!  ")
+    
+    #import pdb; pdb.set_trace()   
     
     # 2: Mask the data  
     mask_coh_water = np.isnan(cumulative)                                                                       # get where masked

@@ -30,6 +30,9 @@ def dem_and_temporal_source_figure(sources, sources_mask, fig_kwargs, dem = None
     
     from icasar.aux2 import update_mask_sources_ifgs
     
+    if fig_title is not None:
+        print(f"Starting to create the {fig_title} figure:")
+    
     if dem is not None:
         dem_ma = ma.masked_invalid(dem)                                                                                                             # LiCSBAS dem uses nans, but lets switch to a masked array (with nans masked)
         dem_new_mask, sources_new_mask, mask_both = update_mask_sources_ifgs(sources_mask, sources,                             # this takes mask and data as row vectors for one set of masked pixels (the sources from pca) 
@@ -47,6 +50,7 @@ def dem_and_temporal_source_figure(sources, sources_mask, fig_kwargs, dem = None
         tcs_to_tempbaselines_comparisons = None
                                                                                
     plot_source_tc_correlations(sources, sources_mask, dem_ma, dem_to_sources_comparisons, tcs_to_tempbaselines_comparisons, fig_title = fig_title, **fig_kwargs)       # do the atual plotting
+    print("Done.  ")
 
 
 #%%
@@ -270,7 +274,7 @@ def signals_to_master_signal_comparison(signals, master_signal, density = False)
         xyzs = []                                                                              # initiate
         line_xys = []
         cor_coefs = []
-        print(f"Starting to calculate the 2D kernel density estimates for the signals.  Completed ", end = '')
+        print(f"    Starting to calculate the 2D kernel density estimates for the signals.  Completed ", end = '')
         for signal_n, signal in enumerate(signals):                                            # signal is a row of signals, and loop through them.  
             
             # 1: Do the kernel density estimate
