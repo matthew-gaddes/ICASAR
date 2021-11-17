@@ -438,6 +438,7 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
     2021_09_23 | MEG | Add option to extract where the LiCSBAS reference area is.  
     2021_09_28 | MEG | Fix cropping option.  
     2021_11_15 | MEG | Use LiCSBAS reference pixel/area information to reference time series.  
+    2021_11_17 | MEG | Add funtcionality to work with LiCSBAS bytes/string issue in reference area.  
     """
 
     import h5py as h5
@@ -619,6 +620,9 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
         
     if ref_area:
        ref_str = cumh5['refarea'][()] 
+       if not isinstance(ref_str, str):                                                                           # ref_str is sometimes a string, sometimes not (dependent on LiCSBAS version perhaps? )
+           ref_str = ref_str.decode()                                                                             # assume that if not a string, a bytes object that can be decoded.        
+           
        ref_xy = {'x_start' : int(ref_str.split('/')[0].split(':')[0]),                                            # convert the correct part of the string to an integer
                  'x_stop' : int(ref_str.split('/')[0].split(':')[1]),
                  'y_start' : int(ref_str.split('/')[1].split(':')[0]),
