@@ -64,7 +64,7 @@ def plot_2d_interactive_fig(xy, colours, spatial_data = None, temporal_data = No
                     continue
             else:
                 continue
-        fig.canvas.draw_idle()                                          # update the figure
+        fig.canvas.manager.draw_idle()                                          # update the figure
     
     
     def axes_data_to_fig_percent(axes_lims, fig_lims, point):
@@ -142,7 +142,7 @@ def plot_2d_interactive_fig(xy, colours, spatial_data = None, temporal_data = No
                     inset_axes.imshow(spatial_data['images_r3'][point_n,])                                                      # or draw the inset axes image
                 inset_axes.set_xticks([])                                                                                       # and remove ticks (and so labels too) from x
                 inset_axes.set_yticks([])                                                                                       # and from y
-                fig.canvas.draw_idle()                                                                                          # update the figure.  
+                fig.canvas.manager.draw_idle()                                                                                          # update the figure.  
             else:                                                                       # else not on a point
                 remove_axes2_and_arrow(fig)                                             # remove the axes and arrow created when hovering on the point                       
         else:                                                                           # else not in the axes
@@ -175,7 +175,7 @@ def plot_2d_interactive_fig(xy, colours, spatial_data = None, temporal_data = No
 
     # 3: Try and add various labels from the labels dict
     try:
-        fig.canvas.set_window_title(labels['title'])
+        fig.canvas.manager.set_window_title(labels['title'])
         fig.suptitle(labels['title'])
     except:
         pass
@@ -193,7 +193,7 @@ def plot_2d_interactive_fig(xy, colours, spatial_data = None, temporal_data = No
         axes1.legend(handles = legend['elements'], labels = legend['labels'], 
                      bbox_to_anchor=(1., 0.5), loc = 'center right', bbox_transform=plt.gcf().transFigure)                           # Put a legend to the right of the current axis.  bbox is specified in figure coordinates.  
               
-    fig.canvas.mpl_connect("motion_notify_event", hover)                                # connect the figure and the function.  
+    fig.canvas.manager.mpl_connect("motion_notify_event", hover)                                # connect the figure and the function.  
     
     if figures == 'window':
         pass

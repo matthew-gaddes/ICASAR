@@ -140,7 +140,7 @@ def plot_source_tc_correlations(sources, mask, dem = None, dem_to_ic_comparisons
 
     f, axes = plt.subplots(3, (n_sources+1), figsize = (15,7))
     plt.subplots_adjust(wspace = 0.1)
-    f.canvas.set_window_title(f"{fig_title}")
+    f.canvas.manager.set_window_title(f"{fig_title}")
     
     # 1: Plot the DEM:
     if dem is not None:
@@ -496,7 +496,7 @@ def plot_spatial_signals(spatial_map, pixel_mask, timecourse, shape, title, shar
     
     f, (ax_all) = plt.subplots(2, n_sources, figsize=(15,7))
     f.suptitle(title, fontsize=14)
-    f.canvas.set_window_title(title)
+    f.canvas.manager.set_window_title(title)
     for i in range(n_sources):    
         im = ax_all[0,i].imshow(spatial_maps_ma[i], cmap = ifg_colours_cent, vmin = np.min(spatial_map), vmax = np.max(spatial_map))
         ax_all[0,i].set_xticks([])
@@ -552,7 +552,7 @@ def plot_temporal_signals(signals, title = None, signal_names = None,
     n_signals = signals.shape[0]
     fig1, axes = plt.subplots(n_signals,1, figsize = (10,6))
     if title is not None:
-        fig1.canvas.set_window_title(title)
+        fig1.canvas.manager.set_window_title(title)
         fig1.suptitle(title)
     for signal_n, signal in enumerate(signals):
         axes[signal_n].plot(np.arange(0, signals.shape[1]), signal)
@@ -606,7 +606,7 @@ def plot_pca_variance_line(pc_vals, title = '', figures = 'window', png_path = '
     ax.set_ylabel('Cumulative Variance')
     ax.set_ylim([0, 1])
     ax.set_title(title)
-    f.canvas.set_window_title(title)
+    f.canvas.manager.set_window_title(title)
     
 
     if figures == 'window':

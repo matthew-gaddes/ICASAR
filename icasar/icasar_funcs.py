@@ -697,7 +697,7 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
             ifg_n_plot = 1                                                                                      # which number ifg to plot.  Shouldn't need to change.  
             title = f'Cropped region, ifg {ifg_n_plot}'
             fig_crop, ax = plt.subplots()
-            fig_crop.canvas.set_window_title(title)
+            fig_crop.canvas.manager.set_window_title(title)
             ax.set_title(title)
             ax.imshow(col_to_ma(displacement_r2['incremental'][ifg_n_plot,:], displacement_r2['mask']),
                                 interpolation='none', aspect='auto')                                            # plot the uncropped ifg
