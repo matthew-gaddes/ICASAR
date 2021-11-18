@@ -415,6 +415,7 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
                                 Note, generally better to have cropped (cliped in LiCSBAS language) to the correct area in LiCSBAS_for_LiCSAlert
         return_r3 | boolean | if True, the rank 3 data is also returns (n_ifgs x height x width).  Not used by ICASAR, so default is False
         ref_area | boolean | If True, the reference area (in pixels, x then y) used by LiCSBAS is extracted and returned to the user.  
+                            Regardless of how this is set, the reference area is always extractd to reference the time series.  
 
     Outputs:
         displacment_r3 | dict | Keys: cumulative, incremental.  Stored as masked arrays.  Mask should be consistent through time/interferograms
@@ -588,22 +589,28 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
     # 0: Work out the names of LiCSBAS folders - not tested exhaustively! 
     LiCSBAS_folders = {}
     LiCSBAS_folders['all'] = os.listdir(LiCSBAS_out_folder)
-    for LiCSBAS_folder in LiCSBAS_folders['all']:
-        if bool(re.match(re.compile('TS_.'), LiCSBAS_folder)):                                                   # the timeseries output, which is named depending on mutlitlooking and clipping.  
+
+    for LiCSBAS_folder in LiCSBAS_folders['all']:                                                                   # 1: Loop though looking for the TS direcotry
+        if bool(re.match(re.compile('TS_.'), LiCSBAS_folder)):                                                      # the timeseries output, which is named depending on mutlitlooking and clipping.  
             LiCSBAS_folders['TS_'] = LiCSBAS_folder
-        else:
-            pass
-        if re.match(re.compile('GEOCml.+clip'), LiCSBAS_folder):                                            # see if there is a folder of multilooked and clipped
-            LiCSBAS_folders['ifgs'] = LiCSBAS_folder
-        elif re.match(re.compile('GEOCml.+'), LiCSBAS_folder):                                            # see if there is a folder of multilooked and clipped
-            LiCSBAS_folders['ifgs'] = LiCSBAS_folder
-        elif re.match(re.compile('GEOC'), LiCSBAS_folder):                                            # see if there is a folder of multilooked and clipped
-            LiCSBAS_folders['ifgs'] = LiCSBAS_folder
-        else:
-            pass
-    if 'TS_' not in LiCSBAS_folders:
-        raise Exception(f"Unable to find the TS_* folder that contains the .h5 files with the LiCSBAS results.  Exiting.  ")
     
+    for LiCSBAS_folder in LiCSBAS_folders['all']:                                                                   # 2a: Loop though looking for the ifgs directory, which depends on lots of things.  
+        if re.match(re.compile('GEOCml.+clip'), LiCSBAS_folder):                                                    # multilooked and clipped
+                LiCSBAS_folders['ifgs'] = LiCSBAS_folder
+
+    if 'ifgs' not in LiCSBAS_folders.keys():                                                                        # 2b: If we haven't found it already
+        for LiCSBAS_folder in LiCSBAS_folders['all']:                                                               # Loop though looking for the other way the ifgs directory can be called
+            if re.match(re.compile('GEOCml.+'), LiCSBAS_folder):                                                    # or just multilooked 
+                LiCSBAS_folders['ifgs'] = LiCSBAS_folder
+
+    if 'ifgs' not in LiCSBAS_folders.keys():                                                                        # 2c if we haven't found it already
+        for LiCSBAS_folder in LiCSBAS_folders['all']:                                                               # loop through
+            if re.match(re.compile('GEOC'), LiCSBAS_folder):                                                        # neither multilooked or clipped
+                LiCSBAS_folders['ifgs'] = LiCSBAS_folder
+    
+    if ('TS_' not in LiCSBAS_folders) or ('ifgs' not in LiCSBAS_folders):
+        raise Exception(f"Unable to find the TS_* and ifgs  directories that contain the LiCSBAS results.  Perhaps the LiCSBAS directories have unusual names?  Exiting.  ")
+
 
     # 1: Open the h5 file with the incremental deformation in.  
     displacement_r3 = {}                                                                                        # here each image will 1 x width x height stacked along first axis
@@ -618,15 +625,14 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
     cumulative = cumh5['cum'][()]                                                                                # get cumulative displacements as a rank3 numpy array
     cumulative *= 0.001                                                                                             # LiCSBAS default is mm, convert to m
         
-    if ref_area:
-       ref_str = cumh5['refarea'][()] 
-       if not isinstance(ref_str, str):                                                                           # ref_str is sometimes a string, sometimes not (dependent on LiCSBAS version perhaps? )
-           ref_str = ref_str.decode()                                                                             # assume that if not a string, a bytes object that can be decoded.        
-           
-       ref_xy = {'x_start' : int(ref_str.split('/')[0].split(':')[0]),                                            # convert the correct part of the string to an integer
-                 'x_stop' : int(ref_str.split('/')[0].split(':')[1]),
-                 'y_start' : int(ref_str.split('/')[1].split(':')[0]),
-                 'y_stop' : int(ref_str.split('/')[1].split(':')[1])}
+    ref_str = cumh5['refarea'][()] 
+    if not isinstance(ref_str, str):                                                                           # ref_str is sometimes a string, sometimes not (dependent on LiCSBAS version perhaps? )
+        ref_str = ref_str.decode()                                                                             # assume that if not a string, a bytes object that can be decoded.        
+        
+    ref_xy = {'x_start' : int(ref_str.split('/')[0].split(':')[0]),                                            # convert the correct part of the string to an integer
+              'x_stop' : int(ref_str.split('/')[0].split(':')[1]),
+              'y_start' : int(ref_str.split('/')[1].split(':')[0]),
+              'y_stop' : int(ref_str.split('/')[1].split(':')[1])}
     
     try:                                                                                                                                                             # reference the time series
         ifg_offsets = np.nanmean(cumulative[:, ref_xy['y_start']: ref_xy['y_stop'], ref_xy['x_start']: ref_xy['x_stop']], axis = (1,2))                              # get the offset between the reference pixel/area and 0 for each time
@@ -634,7 +640,7 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
     except:
         print(f"Failed to reference the LiCSBAS time series - use with caution!  ")
     
-    #import pdb; pdb.set_trace()   
+    
     
     # 2: Mask the data  
     mask_coh_water = np.isnan(cumulative)                                                                       # get where masked
@@ -664,7 +670,7 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
     displacement_r3['lons'] = geocode_info['lons_mg']                                                                                        # add to the displacement dict (rank 3 one)
     displacement_r3['lats'] = geocode_info['lats_mg']
 
-    # 4: Open the parameter file to get the number of pixels in width and height (though this should agree with above)
+    # 4: Open the parameter file to get the number of pixels in width and height (though this should agree with above)   
     try:
         width = int(get_param_par(LiCSBAS_out_folder / LiCSBAS_folders['ifgs'] / 'slc.mli.par', 'range_samples'))
         length = int(get_param_par(LiCSBAS_out_folder / LiCSBAS_folders['ifgs'] / 'slc.mli.par', 'azimuth_lines'))
@@ -1044,11 +1050,17 @@ def bootstrap_ICA(X, n_comp, bootstrap = True, ica_param = (1e-4, 150),
         pca_success = True
             
     if pca_success:                                                                                         # If PCA was a success, do ICA (note, if not neeed, success is set to True)
-        X_whitened = X_whitened[:n_comp,]                                                                     # reduce dimensionality
-        W, S, A_white, _, _, ica_success = fastica_MEG(X_whitened, n_comp=n_comp,  algorithm="parallel",        
-                                                   whiten=False, maxit=ica_param[1], tol = ica_param[0], verbose = verbose)          # do ICA
-        A = dewhiten_matrix[:,0:n_comp] @ A_white                                         # turn ICA mixing matrix back into a time courses (ie dewhiten)
-        S, A = maps_tcs_rescale(S, A)                                                     # rescale so spatial maps have a range or 1 (so easy to compare)
+        X_whitened = X_whitened[:n_comp,]                                                                                                       # reduce dimensionality ready for ICA
+        try:                                                                                                                                    # try ICA, as it can occasionaly fail (nans etc)
+            W, S, A_white, _, _, ica_success = fastica_MEG(X_whitened, n_comp=n_comp,  algorithm="parallel",        
+                                                           whiten=False, maxit=ica_param[1], tol = ica_param[0], verbose = verbose)         # do ICA
+            A = dewhiten_matrix[:,0:n_comp] @ A_white                                                                                       # turn ICA mixing matrix back into a time courses (ie dewhiten/ undo dimensonality reduction)
+            S, A = maps_tcs_rescale(S, A)                                                                                                   # rescale so spatial maps have a range or 1 (so easy to compare)
+        except:
+            print(f"A FastICA run has failed, continuing anyway.  ")
+            ica_success = False
+        
+    if pca_success and ica_success:
         return S, A, ica_success
     else:                                                                                                   # or if not a success, say that 
         ica_success = False
