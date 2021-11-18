@@ -64,7 +64,7 @@ def plot_2d_interactive_fig(xy, colours, spatial_data = None, temporal_data = No
                     continue
             else:
                 continue
-        fig.canvas.manager.draw_idle()                                          # update the figure
+        fig.canvas.draw_idle()                                          # update the figure
     
     
     def axes_data_to_fig_percent(axes_lims, fig_lims, point):
@@ -193,7 +193,7 @@ def plot_2d_interactive_fig(xy, colours, spatial_data = None, temporal_data = No
         axes1.legend(handles = legend['elements'], labels = legend['labels'], 
                      bbox_to_anchor=(1., 0.5), loc = 'center right', bbox_transform=plt.gcf().transFigure)                           # Put a legend to the right of the current axis.  bbox is specified in figure coordinates.  
               
-    fig.canvas.manager.mpl_connect("motion_notify_event", hover)                                # connect the figure and the function.  
+    fig.canvas.mpl_connect("motion_notify_event", hover)                                # connect the figure and the function.  
     
     if figures == 'window':
         pass
