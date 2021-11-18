@@ -299,7 +299,7 @@ def PCA_meg2(X, verbose = False, return_dewhiten = True):
     X = X - X.mean(axis=1)[:,np.newaxis]                # mean center each row (ie dimension)
 
     if samples < dims and dims > 100:                   # do PCA using the compact trick (i.e. if there are more dimensions than samples, there will only ever be sample -1 PC [imagine a 3D space with 2 points.  There is a vector joining the points, one orthogonal to that, but then there isn't a third one])
-        import pdb; pdb.set_trace()
+        #import pdb; pdb.set_trace()
         if verbose:
             print('There are more samples than dimensions and more than 100 dimension so using the compact trick.')
         M = (1/samples) * X.T @ X                                        # maximum liklehood covariance matrix.  See blog post for details on (samples) or (samples -1): https://lazyprogrammer.me/covariance-matrix-divide-by-n-or-n-1/
