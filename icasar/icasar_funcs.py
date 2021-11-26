@@ -232,16 +232,16 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
 
     # -0:  Possibly create all interferograms, create the arary of mixtures (X), and mean centre
     if spatial:
-        spatial_data['ifgs_dc_mc'] = spatial_data['ifgs_dc'] -  np.mean(spatial_data['ifgs_dc'], axis = 1)[:,np.newaxis]                                     # also mean centre the        
+        spatial_data['ifgs_dc_mc'] = spatial_data['ifgs_dc'] -  np.mean(spatial_data['ifgs_dc'], axis = 1)[:,np.newaxis]                                     # also mean centre the daisy chain interferograms       
+        spatial_data['ifgs_all'], spatial_data['ifg_dates_all'] = create_all_ifgs(spatial_data['ifgs_dc'], spatial_data['ifg_dates_dc'], max_n_all_ifgs)     # create all ifgs, even if we don't use them.  
+        spatial_data['ifgs_all_mc'] = spatial_data['ifgs_all'] -  np.mean(spatial_data['ifgs_all'], axis = 1)[:,np.newaxis]                                  # mean centre all the inteferograms.  
+        spatial_data['t_baselines_all'] = baseline_from_names(spatial_data['ifg_dates_all'])                                                                 # and calculate their temporal baselines.  
         if sica_tica == 'sica':
             if create_all_ifgs_flag:
-                spatial_data['ifgs_all'], spatial_data['ifg_dates_all'] = create_all_ifgs(spatial_data['ifgs_dc'], spatial_data['ifg_dates_dc'], max_n_all_ifgs)                  # if ifg_dates is None, None is also returned.           
-                spatial_data['ifgs_all_mc'] = spatial_data['ifgs_all'] -  np.mean(spatial_data['ifgs_all'], axis = 1)[:,np.newaxis]                                     # also mean centre the 
-                spatial_data['t_baselines_all'] = baseline_from_names(spatial_data['ifg_dates_all'])                                                                                         # we can use these to calcaulte temporal baselines
-                X = spatial_data['ifgs_all']                                                                                                           # if we're creating all pairs, these will be used as the mixtuers
+                X = spatial_data['ifgs_all']                                                                                                        # if we're creating all pairs, these will be used as the mixtuers
             else:
                 X = spatial_data['ifgs_dc']                                                                                                         # if not, the incremental (daisy chain) of interferograms will be
-        elif sica_tica == 'tica':                                                                                                             # if we're doing temporal ica with spatial data, the mixtures need to be the transpose
+        elif sica_tica == 'tica':                                                                                                                   # if we're doing temporal ica with spatial data, the mixtures need to be the transpose
             X = spatial_data['ifgs_dc'].T
     else:
         X = temporal_data['mixtures_r2']
@@ -256,10 +256,12 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     A_pca = PC_vecs                                                                                                                         # time courses
     S_pca = x_decorrelate                                                                                                                   # sources
     if spatial:
-        #if sica_tica == 'sica':
-        S_pca, A_pca = maps_tcs_rescale(S_pca[:n_comp,:], A_pca[:,:n_comp])                          # rescale to new desicred range, and truncate to desired number of components.  
-        #else:
-            #x_decorrelate_rs, PC_vecs_rs = maps_tcs_rescale(x_decorrelate[:n_comp,:], PC_vecs[:,:n_comp])                          # rescale to new desicred range, and truncate to desired number of components.  
+        if sica_tica == 'sica':
+            S_pca, A_pca = maps_tcs_rescale(S_pca[:n_comp,:], A_pca[:,:n_comp])                          # rescale to new desicred range, and truncate to desired number of components.  
+        elif sica_tica == 'tica':
+            A_pca, S_pca = maps_tcs_rescale(A_pca[:, :n_comp].T, S_pca[:n_comp, :].T)                          # rescale to new desicred range, spatial patterns are now in A
+            S_pca_dc = S_pca.T
+            A_pca = A_pca.T
     else:
         S_pca = S_pca[:n_comp,:]                                                                            # truncate to desirec number of components
         A_pca =  A_pca[:,:n_comp]
@@ -268,17 +270,20 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         plot_pca_variance_line(PC_vals, title = '01_PCA_variance_line', **fig_kwargs)
         if spatial:
             if sica_tica == 'sica':
-                if create_all_ifgs_flag:
-                    inversion_results = bss_components_inversion(S_pca, [spatial_data['ifgs_dc_mc']])                                                 # invert to fit the incremetal ifgs.  
-                    A_pca_dc = inversion_results[0]['tcs'].T
-                    two_spatial_signals_plot(S_pca, spatial_data['mask'], spatial_data['dem'], A_pca_dc, A_pca, spatial_data['t_baselines_dc'], spatial_data['t_baselines_all'],
-                                            "02_PCA_sources", spatial_data['ifg_dates_dc'], fig_kwargs)
-                else:
-                    two_spatial_signals_plot(S_pca, spatial_data['mask'], spatial_data['dem'], A_pca, None , spatial_data['t_baselines_dc'], None,                                      # no data for all ifgs, as we didn't create them (where all is ifgs between all acquisitions.  )
-                                             "02_PCA_sources", spatial_data['ifg_dates_dc'],  fig_kwargs)
-            elif sica_tica == 'tica':
-                two_spatial_signals_plot(A_pca.T, spatial_data['mask'], spatial_data['dem'], S_pca.T, None , spatial_data['t_baselines_dc'], None,                                      # no data for all ifgs, as we didn't create them (where all is ifgs between all acquisitions.  )
-                                             "02_PCA_sources", spatial_data['ifg_dates_dc'], fig_kwargs)                    
+                inversion_results = bss_components_inversion(S_pca, [spatial_data['ifgs_dc_mc'], spatial_data['ifgs_all_mc']])                                                                  # invert to fit the incremetal ifgs and all ifgs
+                source_residuals = inversion_results[0]['residual']        
+                A_pca_dc = inversion_results[0]['tcs'].T                                                                                                                                        # in sICA, time courses are in A
+                A_pca_all = inversion_results[1]['tcs'].T
+                two_spatial_signals_plot(S_pca, spatial_data['mask'], spatial_data['dem'], A_pca_dc, A_pca_all, spatial_data['t_baselines_dc'], spatial_data['t_baselines_all'],
+                                         "02_PCA_sources", spatial_data['ifg_dates_dc'], fig_kwargs)
+            elif sica_tica == 'tica':#
+                inversion_results = bss_components_inversion(S_pca_dc, [spatial_data['ifgs_dc_mc'].T])#, spatial_data['ifgs_all_mc']])                                                                # invert to fit the incremetal ifgs and all ifgs
+                source_residuals = inversion_results[0]['residual']        
+                A_pca = (inversion_results[0]['tcs'])                                                                                                                # A are images as row vectors for tiCA
+                inversion_results = bss_components_inversion(A_pca, [spatial_data['ifgs_all_mc']])                                                                # invert to fit the incremetal ifgs and all ifgs
+                S_pca_all = inversion_results[0]['tcs']                                                                                                                                        # in sICA, time courses are in A
+                two_spatial_signals_plot(A_pca, spatial_data['mask'], spatial_data['dem'], S_pca_dc.T, S_pca_all.T, spatial_data['t_baselines_dc'], spatial_data['t_baselines_all'],          # 
+                                         "02_PCA_sources", spatial_data['ifg_dates_dc'], fig_kwargs)                    
         else:
             plot_temporal_signals(S_pca, '02_PCA_sources', **fig_kwargs)
     
@@ -330,6 +335,12 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
        
     # 4: Do clustering and 2d manifold representation, plus get centrotypes of clusters, and make an interactive plot.   
     S_ica, labels_hdbscan, xy_tsne, clusters_by_max_Iq_no_noise, Iq  = bootstrapped_sources_to_centrotypes(sources_all_r2, hdbscan_param, tsne_param)        # do the clustering and project to a 2d plane.  clusters_by_max_Iq_no_noise is an array of which cluster number is best (ie has the highest Iq)
+    Iq_sorted = np.sort(Iq)[::-1]               
+    n_clusters = S_ica.shape[0]                                                                     # the number of sources/centrotypes is equal to the number of clusters    
+    if spatial:
+        if sica_tica == 'tica':
+            S_ica_dc = S_ica                                                                                                                                      # if temporal, sources are time courses, and only for daisy chain ifgs
+            del S_ica
     labels_colours = prepare_point_colours_for_2d(labels_hdbscan, clusters_by_max_Iq_no_noise)                                                                # make a list of colours so that each point with the same label has the same colour, and all noise points are grey
     legend_dict = prepare_legends_for_2d(clusters_by_max_Iq_no_noise, Iq)    
     marker_dict = {'labels' : np.ravel(np.hstack((np.zeros((1, n_comp*n_converge_bootstrapping)), np.ones((1, n_comp*n_converge_no_bootstrapping)))))}        # boostrapped are labelled as 0, and non bootstrapped as 1
@@ -359,44 +370,75 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
                                 labels = plot_2d_labels, legend = legend_dict, markers = marker_dict, inset_axes_side = inset_axes_side,
                                 fig_filename = plot_2d_labels['title'], **fig_kwargs)
 
-    Iq_sorted = np.sort(Iq)[::-1]               
-    n_clusters = S_ica.shape[0]                                                                     # the number of sources/centrotypes is equal to the number of clusters    
+
     
-    # 5: Make time courses using centrotypes (i.e. S_best, the spatial patterns found by ICA)    
-    if spatial:
+    # 5: Make time courses using centrotypes (i.e. S_ica, the spatial patterns found by ICA), or viceversa if tICA 
+    if spatial: 
         if sica_tica == 'sica':
-            inversion_results = bss_components_inversion(S_ica, [spatial_data['ifgs_dc_mc']])                                                 # invert to fit the incremetal ifgs, doens't matter if it was create_all_ifgs or not as only want to fit the diasy chain  
+            inversion_results = bss_components_inversion(S_ica, [spatial_data['ifgs_dc_mc'], spatial_data['ifgs_all_mc']])                                                                  # invert to fit the incremetal ifgs and all ifgs
             source_residuals = inversion_results[0]['residual']        
-            A_ica = inversion_results[0]['tcs'].T
-            if create_all_ifgs_flag:
-                inversion_results = bss_components_inversion(S_ica, [spatial_data['ifgs_all_mc']])                                          # also invert to fit all possible ifgs, if they exist.  
-                A_ica_all = inversion_results[0]['tcs'].T
+            A_ica_dc = inversion_results[0]['tcs'].T                                                                                                                                        # in sICA, time courses are in A
+            A_ica_all = inversion_results[1]['tcs'].T
+            if fig_kwargs['figures'] != "none":
+                two_spatial_signals_plot(S_ica, spatial_data['mask'], spatial_data['dem'], A_ica_dc, A_ica_all, spatial_data['t_baselines_dc'], spatial_data['t_baselines_all'],
+                                                 "03_ICA_sources", spatial_data['ifg_dates_dc'], fig_kwargs)
         elif sica_tica == 'tica':
-            inversion_results = bss_components_inversion(S_ica, [spatial_data['ifgs_dc_mc'].T])                                                 # invert to fit the incremetal ifgs.  
+            inversion_results = bss_components_inversion(S_ica_dc, [spatial_data['ifgs_dc_mc'].T])
             source_residuals = inversion_results[0]['residual']        
-            A_ica = inversion_results[0]['tcs'].T
+            A_ica = (inversion_results[0]['tcs'])                                                                                                                # A are images as row vectors for tiCA
+            inversion_results = bss_components_inversion(A_ica, [spatial_data['ifgs_all_mc']])                                                                # invert to fit the incremetal ifgs and all ifgs
+            S_ica_all = inversion_results[0]['tcs']                                                                                                                                        # in sICA, time courses are in A
+            if fig_kwargs['figures'] != "none":
+                two_spatial_signals_plot(A_pca, spatial_data['mask'], spatial_data['dem'], S_pca_dc.T, S_pca_all.T, spatial_data['t_baselines_dc'], spatial_data['t_baselines_all'],          # 
+                                         "03_ICA_sources", spatial_data['ifg_dates_dc'], fig_kwargs)                    
     else:
         inversion_results = bss_components_inversion(S_ica, [X_mc])                                                 # invert to fit the mean centered mixture.    
         source_residuals = inversion_results[0]['residual']                                                         # how well we fit those
-        A_ica = inversion_results[0]['tcs'].T                                                                       # and the time coruses to remake them.  
+        A_ica = inversion_results[0]['tcs'].T                                                                       # and the time coruses to remake them.                  
+                
+            #     if sica_tica == 'sica':
+            #     inversion_results = bss_components_inversion(S_pca, [spatial_data['ifgs_dc_mc'], spatial_data['ifgs_all_mc']])                                                                  # invert to fit the incremetal ifgs and all ifgs
+            #     source_residuals = inversion_results[0]['residual']        
+            #     A_pca_dc = inversion_results[0]['tcs'].T                                                                                                                                        # in sICA, time courses are in A
+            #     A_pca_all = inversion_results[1]['tcs'].T
+            #     two_spatial_signals_plot(S_pca, spatial_data['mask'], spatial_data['dem'], A_pca_dc, A_pca_all, spatial_data['t_baselines_dc'], spatial_data['t_baselines_all'],
+            #                              "02_PCA_sources", spatial_data['ifg_dates_dc'], fig_kwargs)
+                
+            # elif sica_tica == 'tica':
+            #     inversion_results = bss_components_inversion(A_pca.T, [spatial_data['ifgs_dc_mc'], spatial_data['ifgs_all_mc']])                                                                # invert to fit the incremetal ifgs and all ifgs
+            #     source_residuals = inversion_results[0]['residual']        
+            #     S_pca_dc = (inversion_results[0]['tcs'].T).T                                                                                                                                    # time courses are supposed to be independent with tICA, so are in S
+            #     S_pca_all = (inversion_results[1]['tcs'].T).T                                                                                                                                   # time courses are supposed to be independent with tICA, so are in S  
+            #     two_spatial_signals_plot(A_pca.T, spatial_data['mask'], spatial_data['dem'], S_pca_dc.T, S_pca_all.T, spatial_data['t_baselines_dc'], spatial_data['t_baselines_all'],          # 
+            #                              "02_PCA_sources", spatial_data['ifg_dates_dc'], fig_kwargs)                    
+    
+    
+    # if spatial:
+    #     if sica_tica == 'sica':
+    #         inversion_results = bss_components_inversion(S_ica, [spatial_data['ifgs_dc_mc'], spatial_data['ifgs_all_mc']])                                                 # invert to fit the incremetal ifgs, doens't matter if it was create_all_ifgs or not as only want to fit the diasy chain  
+    #         source_residuals = inversion_results[0]['residual']        
+    #         A_ica_dc = inversion_results[0]['tcs'].T
+    #         A_ica_all = inversion_results[1]['tcs'].T
+    #     elif sica_tica == 'tica':
+    #         import pdb; pdb.set_trace()
+    #         inversion_results = bss_components_inversion(S_ica, [spatial_data['ifgs_dc_mc'].T])#, spatial_data['ifgs_all_mc'].T])                                                 # invert to fit the incremetal ifgs, doens't matter if it was create_all_ifgs or not as only want to fit the diasy chain  
+    #         #inversion_results = bss_components_inversion(S_ica, [spatial_data['ifgs_dc_mc'].T])                                                 # invert to fit the incremetal ifgs.  
+    #         source_residuals = inversion_results[0]['residual']        
+    #         A_ica = inversion_results[0]['tcs'].T
+
             
 
-    
-    # 6: Possibly make figure of the centrotypes (chosen sources) and time courses (ie these are the sources we have recovered)
-    if fig_kwargs['figures'] != "none":
-        if spatial:
-            if sica_tica == 'sica':
-                if create_all_ifgs_flag:
-                    two_spatial_signals_plot(S_ica, spatial_data['mask'], spatial_data['dem'], A_ica, A_ica_all, spatial_data['t_baselines_dc'], spatial_data['t_baselines_all'],
-                                             "04_ICA_sources", spatial_data['ifg_dates_dc'], fig_kwargs)
-                else:   
-                    two_spatial_signals_plot(S_ica, spatial_data['mask'], spatial_data['dem'], A_ica, None , spatial_data['t_baselines_dc'], None,                                      # no data for all ifgs, as we didn't create them (where all is ifgs between all acquisitions.  )
-                                             "04_ICA_sources", spatial_data['ifg_dates_dc'], fig_kwargs)
-            elif sica_tica == 'tica':
-                two_spatial_signals_plot(A_ica.T, spatial_data['mask'], spatial_data['dem'], S_ica.T, None , spatial_data['t_baselines_dc'], None,                                      # no data for all ifgs, as we didn't create them (where all is ifgs between all acquisitions.  )
-                                             "04_ICA_sources", spatial_data['ifg_dates_dc'], fig_kwargs)
-        else:
-            plot_temporal_signals(S_ica, '04_ICASAR_sources', **fig_kwargs)
+    # # 6: Possibly make figure of the centrotypes (chosen sources) and time courses (ie these are the sources we have recovered)
+    # if fig_kwargs['figures'] != "none":
+    #     if spatial:
+    #         if sica_tica == 'sica':
+    #                 two_spatial_signals_plot(S_ica, spatial_data['mask'], spatial_data['dem'], A_ica_dc, A_ica_all, spatial_data['t_baselines_dc'], spatial_data['t_baselines_all'],
+    #                                          "04_ICA_sources", spatial_data['ifg_dates_dc'], fig_kwargs)
+    #         elif sica_tica == 'tica':
+    #             two_spatial_signals_plot(A_ica.T, spatial_data['mask'], spatial_data['dem'], S_ica.T, None , spatial_data['t_baselines_dc'], None,                                      # no data for all ifgs, as we didn't create them (where all is ifgs between all acquisitions.  )
+    #                                          "04_ICA_sources", spatial_data['ifg_dates_dc'], fig_kwargs)
+    #     else:
+    #         plot_temporal_signals(S_ica, '04_ICASAR_sources', **fig_kwargs)
      
     # 7: Possibly geocode the recovered sources and make a Google Earth file.     
     if spatial:
@@ -404,25 +446,43 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
             print('Creating a Google Earth .kmz of the geocoded independent components... ', end = '')
             if sica_tica == 'sica':
                 S_ica_r3 = r2_to_r3(S_ica, mask)
-            else:
-                S_ica_r3 = r2_to_r3(A_ica.T, mask)
+            elif sica_tica == 'tica':
+                S_ica_r3 = r2_to_r3(A_ica, mask)
             r2_arrays_to_googleEarth(S_ica_r3, spatial_data['lons'], spatial_data['lats'], 'IC', out_folder = out_folder)                              # note that lons and lats should be rank 2 (ie an entry for each pixel in the ifgs)
             print('Done!')
             
 
     # 8: Save the results: 
+    S_all_info = {'sources' : sources_all_r2,                                                                # package into a dict to return
+                  'labels' : labels_hdbscan,
+                  'xy' : xy_tsne       }
     print('Saving the key results as a .pkl file... ', end = '')                                            # note that we don't save S_all_info as it's a huge file.  
     if spatial:
-        with open(out_folder / 'ICASAR_results.pkl', 'wb') as f:
-            pickle.dump(S_ica, f)
-            pickle.dump(mask, f)
-            pickle.dump(A_ica, f)
-            pickle.dump(source_residuals, f)
-            pickle.dump(Iq_sorted, f)
-            pickle.dump(n_clusters, f)
-            pickle.dump(xy_tsne, f)
-            pickle.dump(labels_hdbscan, f)
-        f.close()
+        if sica_tica == 'sica':
+            with open(out_folder / 'ICASAR_results.pkl', 'wb') as f:
+                pickle.dump(S_ica, f)
+                pickle.dump(mask, f)
+                pickle.dump(A_ica_dc, f)
+                pickle.dump(source_residuals, f)
+                pickle.dump(Iq_sorted, f)
+                pickle.dump(n_clusters, f)
+                pickle.dump(xy_tsne, f)
+                pickle.dump(labels_hdbscan, f)
+            f.close()
+            return S_ica, A_ica_dc, source_residuals, Iq_sorted, n_clusters, S_all_info, X_mean
+            
+        elif sica_tica == 'tica':
+            with open(out_folder / 'ICASAR_results.pkl', 'wb') as f:
+                pickle.dump(A_ica, f)                                                       # spatial images are in A
+                pickle.dump(mask, f)
+                pickle.dump(S_ica_dc.T, f)                                                  # time courses are sourcesa and in S
+                pickle.dump(source_residuals, f)
+                pickle.dump(Iq_sorted, f)
+                pickle.dump(n_clusters, f)
+                pickle.dump(xy_tsne, f)
+                pickle.dump(labels_hdbscan, f)
+            f.close()
+            return A_ica, S_ica_dc.T, source_residuals, Iq_sorted, n_clusters, S_all_info, X_mean
         print("Done!")
     else:                                                                       # if temporal data, no mask to save
         with open(out_folder / 'ICASAR_results.pkl', 'wb') as f:
@@ -435,12 +495,11 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
             pickle.dump(labels_hdbscan, f)
         f.close()
         print("Done!")
+        return S_ica, A_ica, source_residuals, Iq_sorted, n_clusters, S_all_info, X_mean
 
-    S_all_info = {'sources' : sources_all_r2,                                                                # package into a dict to return
-                  'labels' : labels_hdbscan,
-                  'xy' : xy_tsne       }
+
     
-    return S_ica, A_ica, source_residuals, Iq_sorted, n_clusters, S_all_info, X_mean
+    
    
 
 #%%

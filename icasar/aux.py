@@ -30,7 +30,7 @@ def two_spatial_signals_plot(images, mask, dem, tcs_dc, tcs_all, t_baselines_dc,
     """
     
     # 1: First figure is simpler as only use daisy chain time courses
-    plot_spatial_signals(images.T, mask, tcs_dc.T, mask.shape, title = title,
+    plot_spatial_signals(images.T, mask, tcs_dc.T, mask.shape, title = f"{title}_time",
                          temporal_baselines = t_baselines_dc, ifg_dates_dc = ifg_dates_dc, **fig_kwargs)                      # the usual plot of the sources and their time courses (ie contributions to each ifg)                              
 
     # 2: Second figure may have access to all interfergram time courses and temporal baselines, but may also not.          
@@ -41,7 +41,7 @@ def two_spatial_signals_plot(images, mask, dem, tcs_dc, tcs_all, t_baselines_dc,
         temporal_data = {'tcs'                : tcs_dc,
                          'temporal_baselines' : t_baselines_dc}
         
-    dem_and_temporal_source_figure(images, mask, fig_kwargs, dem, temporal_data, fig_title = title)                                        # also compare the sources to the DEM, and the correlation between their time courses and the temporal baseline of each interferogram.  
+    dem_and_temporal_source_figure(images, mask, fig_kwargs, dem, temporal_data, fig_title = f"{title}_correlations")                                        # also compare the sources to the DEM, and the correlation between their time courses and the temporal baseline of each interferogram.  
 
 
   
