@@ -142,7 +142,7 @@ def plot_2d_interactive_fig(xy, colours, spatial_data = None, temporal_data = No
                     inset_axes.imshow(spatial_data['images_r3'][point_n,])                                                      # or draw the inset axes image
                 inset_axes.set_xticks([])                                                                                       # and remove ticks (and so labels too) from x
                 inset_axes.set_yticks([])                                                                                       # and from y
-                fig.canvas.manager.draw_idle()                                                                                          # update the figure.  
+                fig.canvas.draw_idle()                                                                                          # update the figure.  
             else:                                                                       # else not on a point
                 remove_axes2_and_arrow(fig)                                             # remove the axes and arrow created when hovering on the point                       
         else:                                                                           # else not in the axes
@@ -263,8 +263,8 @@ def update_mask_sources_ifgs(mask_sources, sources, mask_ifgs, ifgs):
     n_pixs_sources = len(np.argwhere(mask_sources == False))                                  # masked pixels are 1s, so invert with 1- bit so that non-masked are 1s, then sum to get number of pixels
     n_pixs_new = len(np.argwhere(mask_ifgs == False))                                          # ditto for new mask
     n_pixs_both = len(np.argwhere(mask_both == False))                                        # ditto for the mutual mask
-    print(f"Updating masks and ICA sources.  Of the {n_pixs_sources} in the sources and {n_pixs_new} in the current LiCSBAS time series, "
-          f"{n_pixs_both} are in both and can be used in this iteration of LiCSAlert.  ")
+    print(f"Updating masks and ICA sources.  Of the {n_pixs_sources} in the 1st set of sources and {n_pixs_new} in the 2nd set of sources, "
+          f"{n_pixs_both} are in both and can be used in the following step.  ")
     
     ifgs_new_mask = apply_new_mask(ifgs, mask_ifgs, mask_both)                                  # apply the new mask to the old ifgs and return the non-masked elemts as row vectors.  
     sources_new_mask = apply_new_mask(sources, mask_sources, mask_both)                         # ditto for the sources.  

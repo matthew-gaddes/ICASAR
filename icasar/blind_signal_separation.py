@@ -299,14 +299,14 @@ def PCA_meg2(X, verbose = False, return_dewhiten = True):
     X = X - X.mean(axis=1)[:,np.newaxis]                # mean center each row (ie dimension)
 
     if samples < dims and dims > 100:                   # do PCA using the compact trick (i.e. if there are more dimensions than samples, there will only ever be sample -1 PC [imagine a 3D space with 2 points.  There is a vector joining the points, one orthogonal to that, but then there isn't a third one])
-        #import pdb; pdb.set_trace()
         if verbose:
             print('There are more samples than dimensions and more than 100 dimension so using the compact trick.')
         M = (1/samples) * X.T @ X                                        # maximum liklehood covariance matrix.  See blog post for details on (samples) or (samples -1): https://lazyprogrammer.me/covariance-matrix-divide-by-n-or-n-1/
-        e,EV = np.linalg.eigh(M)                                         # eigenvalues and eigenvectors.  Note that in some cases this function can return negative eigenvalues (e)    
+        e, EV = np.linalg.eigh(M)                                         # eigenvalues and eigenvectors.  Note that in some cases this function can return negative eigenvalues (e)    
         if np.min(e) < 0:
-            raise Exception(f"There are negative values in the eigenvalues.  This is a tricky problem, but is usually a product of using far more interferograms than pixels.  "
-                            f"E.g. a time series of 1000 ifgs with 500 pixels, but it would be much more normal to have 100 ifgs and 50000 pixels. ")
+            print(f"There are negative values in the eigenvalues.  This is a tricky problem, but is usually only caused by poor approximations to zero by floating point arithmetic.  "
+                  f"Trying to set these to a better approxiation of zero to contiue.  ")
+            e = np.where(e < 0, np.abs(e), e)
         tmp = (X @ EV)                                                   # this is the compact trick
         vecs = tmp[:,::-1]                                               # vectors are columns, make first (left hand ones) the important onces
         vals = np.sqrt(e)[::-1]                                          # also reverse the eigenvectors.  Note that with the negative eigen values that can be encoutered here, this produces nans.  
@@ -323,6 +323,7 @@ def PCA_meg2(X, verbose = False, return_dewhiten = True):
         whiten_mat = (covs_recip_mat @ vecs.T)
         if return_dewhiten:
             dewhiten_mat = np.linalg.pinv(whiten_mat)                           # as always loose a dimension with compact trick, have to use pseudoinverse
+
     else:                                                                       # or do PCA normally
         cov_mat = np.cov(X)                                                     # dims by dims covariance matrix
         vals_noOrder, vecs_noOrder = np.linalg.eigh(cov_mat)                    # vectors (vecs) are columns, not not ordered
