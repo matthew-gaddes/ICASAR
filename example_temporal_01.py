@@ -32,7 +32,7 @@ ICASAR_settings = {"n_comp" : 5,                                    # number of 
                     "bootstrapping_param" : (200, 0),               # (number of runs with bootstrapping, number of runs without bootstrapping)                    "hdbscan_param" : (35, 10),                        # (min_cluster_size, min_samples)
                     "tsne_param" : (30, 12),                        # (perplexity, early_exaggeration)
                     "ica_param" : (1e-2, 150),                      # (tolerance, max iterations)
-                    "hdbscan_param" : (35,10),                      # (min_cluster_size, min_samples) Discussed in more detail in Mcinnes et al. (2017). min_cluster_size sets the smallest collection of points that can be considered a cluster. min_samples sets how conservative the clustering is. With larger values, more points will be considered noise. 
+                    "hdbscan_param" : (50,10),                      # (min_cluster_size, min_samples) Discussed in more detail in Mcinnes et al. (2017). min_cluster_size sets the smallest collection of points that can be considered a cluster. min_samples sets how conservative the clustering is. With larger values, more points will be considered noise. 
                     "out_folder" : 'example_temporal_01_outputs',     # outputs will be saved here
                     "figures" : "png+window",                       # if png, saved in a folder as .png.  If window, open as interactive matplotlib figures,
                     "inset_axes_side" : {'x':0.3, 'y':0.1}}         # the size of thei inset axes created in the clustering and manifold figure.  

@@ -1172,5 +1172,3 @@ def prepare_legends_for_2d(clusters_by_max_Iq_no_noise, Iq):
                        'labels'   : legend_labels}
         return legend_dict
 
-
-#%%

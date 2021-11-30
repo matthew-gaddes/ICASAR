@@ -292,12 +292,15 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
                 X_mean = ifgs_all.means_space
             else:
                 X_mc = ifgs_dc.mixtures_mc_space                                                                                                         # if not, the incremental (daisy chain) of interferograms will be
-                X_means = ifgs_dc.means_space
+                X_mean = ifgs_dc.means_space
         elif sica_tica == 'tica':                                                                                                                   # if we're doing temporal ica with spatial data, the mixtures need to be the transpose
             X_mc = ifgs_cum.mixtures_mc_time.T                                                                                                          # as cumulative and transpose, effectively the time series for each point.  
             X_mean = ifgs_cum.means_time
     else:
         X = temporal_data['mixtures_r2']
+        X_mean = np.mean(X, axis = 1)[:,np.newaxis]                                         # get the mean for each ifg (ie along rows.  )
+        X_mc = X - X_mean                                                           # mean centre the data (along rows)
+        
         
     
           
@@ -443,6 +446,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         inversion_results = bss_components_inversion(S_ica, [X_mc])                                                 # invert to fit the mean centered mixture.    
         source_residuals = inversion_results[0]['residual']                                                         # how well we fit those
         A_ica = inversion_results[0]['tcs'].T                                                                       # and the time coruses to remake them.                  
+        plot_temporal_signals(S_ica, '04_ICASAR_sources', **fig_kwargs)
                 
  
      

@@ -43,7 +43,7 @@ ICASAR_settings = {"n_comp" : 5,                                         # numbe
                     "ica_param" : (1e-2, 150),                           # (tolerance, max iterations)
                     "hdbscan_param" : (100,10),                           # (min_cluster_size, min_samples) Discussed in more detail in Mcinnes et al. (2017). min_cluster_size sets the smallest collection of points that can be considered a cluster. min_samples sets how conservative the clustering is. With larger values, more points will be considered noise. 
                     "out_folder" : Path('example_spatial_02_outputs_sICA'),   # outputs will be saved here
-                    "load_fastICA_results" : False,                      # If all the FastICA runs already exisit, setting this to True speeds up ICASAR as they don't need to be recomputed.  
+                    "load_fastICA_results" : True,                      # If all the FastICA runs already exisit, setting this to True speeds up ICASAR as they don't need to be recomputed.  
                     "create_all_ifgs_flag" : True,                       # small signals are hard for ICA to extact from time series, so make it easier by creating all possible long temporal baseline ifgs from the incremental data.  
                     'sica_tica'         : 'sica',                        # controls whether spatial sources or time courses are independent.  
                     'max_n_all_ifgs' :  1000,
@@ -67,7 +67,7 @@ ICASAR_settings = {"n_comp" : 5,                                         # numbe
                     "ica_param" : (1e-2, 150),                           # (tolerance, max iterations)
                     "hdbscan_param" : (100,10),                           # (min_cluster_size, min_samples) Discussed in more detail in Mcinnes et al. (2017). min_cluster_size sets the smallest collection of points that can be considered a cluster. min_samples sets how conservative the clustering is. With larger values, more points will be considered noise. 
                     "out_folder" : Path('example_spatial_02_outputs_sICA_incremental'),   # outputs will be saved here
-                    "load_fastICA_results" : False,                      # If all the FastICA runs already exisit, setting this to True speeds up ICASAR as they don't need to be recomputed.  
+                    "load_fastICA_results" : True,                      # If all the FastICA runs already exisit, setting this to True speeds up ICASAR as they don't need to be recomputed.  
                     "create_all_ifgs_flag" : False,                       # small signals are hard for ICA to extact from time series, so make it easier by creating all possible long temporal baseline ifgs from the incremental data.  
                     'max_n_all_ifgs' :  1000,
                     'sica_tica'         : 'sica',                        # controls whether spatial sources or time courses are independent.  
