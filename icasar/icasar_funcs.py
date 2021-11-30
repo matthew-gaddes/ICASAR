@@ -417,16 +417,16 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
                                 fig_filename = plot_2d_labels['title'], **fig_kwargs)
 
 
-    
+
     # 5: Make time courses using centrotypes (i.e. S_ica, the spatial patterns found by ICA), or viceversa if tICA 
     if spatial: 
         if sica_tica == 'sica':
-            inversion_results = bss_components_inversion(S_ica, [spatial_data['ifgs_dc_mc'], spatial_data['ifgs_all_mc']])                                                                  # invert to fit the incremetal ifgs and all ifgs
+            inversion_results = bss_components_inversion(S_ica, [ifgs_dc.mixtures_mc_space, ifgs_all.mixtures_mc_space])                                                                  # invert to fit the incremetal ifgs and all ifgs
             source_residuals = inversion_results[0]['residual']        
             A_ica_dc = inversion_results[0]['tcs'].T                                                                                                                                        # in sICA, time courses are in A
             A_ica_all = inversion_results[1]['tcs'].T
             if fig_kwargs['figures'] != "none":
-                two_spatial_signals_plot(S_ica, spatial_data['mask'], spatial_data['dem'], A_ica_dc, A_ica_all, spatial_data['t_baselines_dc'], spatial_data['t_baselines_all'],
+                two_spatial_signals_plot(S_ica, spatial_data['mask'], spatial_data['dem'], A_ica_dc, A_ica_all, ifgs_dc.t_baselines, ifgs_all.t_baselines,
                                                  "03_ICA_sources", spatial_data['ifg_dates_dc'], fig_kwargs)
         elif sica_tica == 'tica':
             S_ica_cum = S_ica                                                                                                                                         # if temporal, sources are time courses, and are for the cumulative ifgs (as the transpose of these was given to the ICA function)
