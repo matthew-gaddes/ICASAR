@@ -8,7 +8,220 @@ Created on Tue Dec 17 18:19:37 2019
 
 #%%
 
-def dem_and_temporal_source_figure(sources, sources_mask, fig_kwargs, dem = None, temporal_data = None, fig_title = None):
+def two_spatial_signals_plot(images, mask, dem, tcs_dc, tcs_all, t_baselines_dc, t_baselines_all, 
+                             title, ifg_dates_dc, fig_kwargs):
+    """
+    Product the two plots that show spatial sources.  
+    Inputs:
+        images | n_images x n_pixels | spatial signals as row vectors.  
+        mask | boolean rank 2 |         mask to convert row vector to a masked array.  
+        dem | rank 2 masked array |         The DEM.  Used to compare spatial signals to it.  
+        tcs_dcs | n_times x n_images      | daisy chain time courses.  
+        tcs_all | n_all_ifgs x n_images or None  | time courses if we have made all possible ifg pairs.  None if not available.  
+        t_baselines_dc | n_times         | temporal baselines for the diasy chain interferograms.  
+        t_baselines_all | n_all_ifgs     | temporal baselines for all possible ifg pairs, None if not available.  
+        title | string | figure title
+        fig_kwargs | dict | see other functions.  
+    Returns:
+        2 figures
+    History:
+        2021_11_23 | MEG | Written
+        
+    """
+    
+    # 1: First figure is simpler as only use daisy chain time courses
+    plot_spatial_signals(images.T, mask, tcs_dc.T, mask.shape, title = f"{title}_time",
+                         temporal_baselines = t_baselines_dc, ifg_dates_dc = ifg_dates_dc, **fig_kwargs)                      # the usual plot of the sources and their time courses (ie contributions to each ifg)                              
+
+    # 2: Second figure may have access to all interfergram time courses and temporal baselines, but may also not.          
+    if t_baselines_all is not None:
+        temporal_data = {'tcs'                : tcs_all,
+                         'temporal_baselines' : t_baselines_all}
+    else:
+        temporal_data = {'tcs'                : tcs_dc,
+                         'temporal_baselines' : t_baselines_dc}
+        
+    dem_and_temporal_source_figure(images, mask, fig_kwargs, dem, temporal_data, fig_title = f"{title}_correlations")                                        # also compare the sources to the DEM, and the correlation between their time courses and the temporal baseline of each interferogram.  
+
+
+  
+  
+#%%
+def plot_spatial_signals(spatial_map, pixel_mask, tcs, shape, title, ifg_dates_dc, 
+                         temporal_baselines, figures = "window",  png_path = './'):
+    """
+    Input:
+        spatial map | pxc matrix of c component maps (p pixels)
+        pixel_mask | mask to turn spaital maps back to regular grided masked arrays
+        tcs | cxt matrix of c time courses (t long)   
+        shape | tuple | the shape of the grid that the spatial maps are reshaped to
+        title | string | figure tite and png filename (nb .png will be added, don't include here)
+        Temporal_baselines | x axis values for time courses.  Useful if some data are missing (ie the odd 24 day ifgs in a time series of mainly 12 day)
+        figures | string,  "window" / "png" / "png+window" | controls if figures are produced (either as a window, saved as a png, or both)
+        png_path | string | if a png is to be saved, a path to a folder can be supplied, or left as default to write to current directory.  
+        
+    Returns:
+        Figure, either as a window or saved as a png
+        
+    2017/02/17 | modified to use masked arrays that are given as vectors by spatial map, but can be converted back to 
+                 masked arrays using the pixel mask    
+    2017/05/12 | shared scales as decribed in 'shared'
+    2017/05/15 | remove shared colorbar for spatial maps
+    2017/10/16 | remove limit on the number of componets to plot (was 5)
+    2017/12/06 | Add a colorbar if the plots are shared, add an option for the time courses to be done in days
+    2017/12/?? | add the option to pass temporal baselines to the function
+    2020/03/03 | MEG | Add option to save figure as png and close window
+    """
+    
+    import numpy as np
+    import numpy.ma as ma  
+    import matplotlib.pyplot as plt
+    import matplotlib
+    import matplotlib.gridspec as gridspec
+    
+    from icasar.aux2 import remappedColorMap, truncate_colormap
+    
+    def linegraph(sig, ax, temporal_baselines = None):
+        """ signal is a 1xt row vector """
+        
+        if temporal_baselines is None:
+            times = sig.size
+            a = np.arange(times)
+        else:
+            a = np.cumsum(temporal_baselines)                                        # cumulative baselines from temporal baselines.  
+        ax.scatter(a,sig,marker='.', color='k', alpha = 0.5)
+        ax.plot(a,sig, linestyle = '-', color='k',)
+        ax.axhline(y=0, color='k', alpha=0.4) 
+        
+    def xticks_every_3months(ax_to_update, day0_date, time_values, include_tick_labels):
+        """Given an axes, update the xticks so the major ones are the 1st of jan/april/july/october, and the minor ones are the first of the 
+        other months.  
+        Inputs:
+            ax_to_update | matplotlib axes | the axes to update.  
+            day0_date | string | in form yyyymmdd
+            time_values | rank 1 array | cumulative temporal baselines, e.g. np.array([6,18, 30, 36, 48])
+        Returns:
+            updates axes
+        History:
+            2021_09_27 | MEG | Written
+        """
+        import datetime as dt
+        from dateutil.relativedelta import relativedelta                                                    # add 3 months and check not after end
+        from matplotlib.ticker import AutoMinorLocator      
+        
+       
+        xtick_label_angle = 315
+        
+        tick_labels_days = ax_to_update.get_xticks().tolist()                                                # get the current tick labels
+        day0_date_dt = dt.datetime.strptime(day0_date, "%Y%m%d")                                            
+        dayend_date_dt = day0_date_dt +  dt.timedelta(int(time_values[-1]))                                 # the last time value is the number of days we have, so add this to day0 to get the end.  
+    
+        # 1: find first tick date (the first of the jan/ april/jul /oct)                        
+        date_tick0 = day0_date_dt                                                                           
+        while not ( (date_tick0.day) == 1 and (date_tick0.month == 1  or date_tick0.month == 4 or date_tick0.month == 7 or date_tick0.month == 10 )):
+            date_tick0 +=  dt.timedelta(1)
+            
+        # 2: get all the other first of the quarters
+        ticks = {'datetimes' : [date_tick0],
+                 'yyyymmdd'   : [],
+                 'n_day'     : []}
+       
+        while ticks['datetimes'][-1] < (dayend_date_dt - relativedelta(months=+3)):                         # subtract 3 months to make sure we don't go one 3 month jump too far. 
+            ticks['datetimes'].append(ticks['datetimes'][-1] + relativedelta(months=+3))
+        
+        # 3: work out what day number each first of the quarter is.  
+        for tick_dt in ticks['datetimes']:                                                                   # find the day nubmers from this.             
+            ticks['yyyymmdd'].append(dt.datetime.strftime(tick_dt, "%Y/%m/%d"))
+            ticks['n_day'].append((tick_dt - day0_date_dt).days)
+            
+        # 4: Update the figure.  
+        ax_to_update.set_xticks(ticks['n_day'])                                                                   # apply major tick labels to the figure
+        minor_locator = AutoMinorLocator(3)                                                                       # there are three months in each quarter, so a minor tick every month
+        ax_to_update.xaxis.set_minor_locator(minor_locator)                                                       # add to figure.  
+        if include_tick_labels:
+            ax_to_update.set_xticklabels(ticks['yyyymmdd'], rotation = xtick_label_angle, ha = 'left')            # update tick labels, and rotate
+            plt.subplots_adjust(bottom=0.15)
+            ax_to_update.set_xlabel('Date')
+        else:
+            ax_to_update.set_xticklabels([])                                                                    # remove any tick lables if they aren't to be used.  
+        
+        # add vertical lines every year.  
+        for major_tick_n, datetime_majortick in enumerate(ticks['datetimes']):
+            if datetime_majortick.month == 1:
+                ax_to_update.axvline(x = ticks['n_day'][major_tick_n], color='k', alpha=0.1, linestyle='--')           
+        
+ 
+    
+    # colour map stuff
+    ifg_colours = plt.get_cmap('coolwarm')
+    cmap_mid = 1 - np.max(spatial_map)/(np.max(spatial_map) + abs(np.min(spatial_map)))          # get the ratio of the data that 0 lies at (eg if data is -15 to 5, ratio is 0.75)
+    if cmap_mid < (1/257):                                                                       # this is a fudge so that if plot starts at 0 doesn't include the negative colorus for the smallest values
+        ifg_colours_cent = remappedColorMap(ifg_colours, start=0.5, midpoint=0.5, stop=1.0, name='shiftedcmap')
+    else:
+        ifg_colours_cent = remappedColorMap(ifg_colours, start=0.0, midpoint=cmap_mid, stop=1.0, name='shiftedcmap')
+    
+    #make a list of ifgs as masked arrays (and not column vectors)
+    spatial_maps_ma = []
+    for i in range(np.size(spatial_map,1)):
+        spatial_maps_ma.append(ma.array(np.zeros(pixel_mask.shape), mask = pixel_mask ))
+        spatial_maps_ma[i].unshare_mask()
+        spatial_maps_ma[i][~spatial_maps_ma[i].mask] = spatial_map[:,i].ravel()
+    tmp, n_sources = spatial_map.shape
+#    if n_sources > 5:
+#        n_sources = 5
+    del tmp
+    
+    day0_date = ifg_dates_dc[0][:8]
+    
+    #import pdb; pdb.set_trace()
+    
+    fig1 = plt.figure(figsize=(14,8))
+    #f.suptitle(title, fontsize=14)
+    grid = gridspec.GridSpec(n_sources, 6, wspace=0.3, hspace=0.3)                        # divide into 2 sections, 1/5 for ifgs and 4/5 for components
+    fig1.canvas.manager.set_window_title(title)
+    for i in range(n_sources):    
+        # 0: define axes
+        ax_source = plt.Subplot(fig1, grid[i,0])                                                                                        # spatial pattern
+        ax_ctc = plt.Subplot(fig1, grid[i,1:])                                                                                          # ctc = cumulative time course
+        # 1: plot the images (sources)
+        im = ax_source.imshow(spatial_maps_ma[i], cmap = ifg_colours_cent, vmin = np.min(spatial_map), vmax = np.max(spatial_map))
+        ax_source.set_xticks([])
+        ax_source.set_yticks([])
+
+        linegraph(np.cumsum(tcs[i,:]), ax_ctc, temporal_baselines)
+        if i != (n_sources-1):
+            xticks_every_3months(ax_ctc, day0_date, np.cumsum(temporal_baselines), include_tick_labels = False)                     # no tick labels
+        else:
+            xticks_every_3months(ax_ctc, day0_date, np.cumsum(temporal_baselines), include_tick_labels = True)                      # unles the last one.  
+            
+        # if shared ==1:
+        #     ax_ctc.set_ylim([np.min(np.cumsum(tcs)), np.max(np.cumsum(tcs))])
+        ax_ctc.yaxis.tick_right()
+        fig1.add_subplot(ax_source)
+        fig1.add_subplot(ax_ctc)
+            
+    ax_source.set_xlabel('Spatial sources')
+    ax_ctc.set_xlabel('Cumulative time courses')
+            
+    # if shared == 1:                                                             # if the colourbar is shared between each subplot, the axes need extending to make space for it.
+    #     #fig1.tight_layout(rect=[0.1, 0, 1., 1])
+    cax = fig1.add_axes([0.03, 0.1, 0.01, 0.3])
+    fig1.colorbar(im, cax=cax, orientation='vertical')
+  
+    if figures == 'window':                                                                 # possibly save the output
+        pass
+    elif figures == "png":
+        fig1.savefig(f"{png_path}/{title}.png")
+        plt.close()
+    elif figures == 'png+window':
+        fig1.savefig(f"{png_path}/{title}.png")
+    else:
+        pass
+
+#%%
+
+def dem_and_temporal_source_figure(sources, sources_mask, fig_kwargs, dem = None, temporal_data = None, fig_title = None,
+                                   max_pixels = 1000):
     """ Given sources recovered by a blind signal separation method (e.g. PCA or ICA) compare them in space to hte DEM,
     and in time to the temporal baselines.  
     Inputs:
@@ -29,6 +242,18 @@ def dem_and_temporal_source_figure(sources, sources_mask, fig_kwargs, dem = None
     import numpy.ma as ma
     
     from icasar.aux2 import update_mask_sources_ifgs
+
+    def reduce_n_pixs(r2_arrays, n_pixels_new):
+        """
+        """
+        n_pixels_old = r2_arrays[0].shape[1]                                # each pixel is a new column
+        index = np.arange(n_pixels_old)
+        np.random.shuffle(index)
+        r2_arrays_new = []
+        index = index[:n_pixels_new]
+        for r2_array in r2_arrays:
+            r2_arrays_new.append(r2_array[:, index])
+        return r2_arrays_new
     
     if fig_title is not None:
         print(f"Starting to create the {fig_title} figure:")
@@ -36,12 +261,14 @@ def dem_and_temporal_source_figure(sources, sources_mask, fig_kwargs, dem = None
     if dem is not None:
         dem_ma = ma.masked_invalid(dem)                                                                                                             # LiCSBAS dem uses nans, but lets switch to a masked array (with nans masked)
         dem_new_mask, sources_new_mask, mask_both = update_mask_sources_ifgs(sources_mask, sources,                             # this takes mask and data as row vectors for one set of masked pixels (the sources from pca) 
-                                                                                      ma.getmask(dem_ma), ma.compressed(dem_ma)[np.newaxis,:])            # and the mask and data as row vectors from the other set of masked pixels (the DEM, hence why it's being turned into a row vector)
+                                                                             ma.getmask(dem_ma), ma.compressed(dem_ma)[np.newaxis,:])            # and the mask and data as row vectors from the other set of masked pixels (the DEM, hence why it's being turned into a row vector)
+        
+        [sources_new_mask, dem_new_mask] = reduce_n_pixs([sources_new_mask, dem_new_mask], max_pixels)
         dem_to_sources_comparisons = signals_to_master_signal_comparison(sources_new_mask, dem_new_mask, density = True)                                                  # And then we can do kernel density plots for each IC and the DEM
+        
     else:
         dem_to_sources_comparisons = None
         dem_ma = None
-    
     
     if temporal_data is not None:
         tcs_to_tempbaselines_comparisons = signals_to_master_signal_comparison(temporal_data['tcs'].T, 
@@ -52,52 +279,8 @@ def dem_and_temporal_source_figure(sources, sources_mask, fig_kwargs, dem = None
     plot_source_tc_correlations(sources, sources_mask, dem_ma, dem_to_sources_comparisons, tcs_to_tempbaselines_comparisons, fig_title = fig_title, **fig_kwargs)       # do the atual plotting
     print("Done.  ")
 
-
 #%%
 
-
-
-def visualise_ICASAR_inversion(interferograms, sources, time_courses, mask, n_data = 10):
-    """
-        2021_03_03 | MEG | Written.  
-    """
-    import numpy as np
-    
-    def plot_ifg(ifg, ax, mask, vmin, vmax):
-        """
-        """
-        w = ax.imshow(col_to_ma(ifg, mask), interpolation ='none', aspect = 'equal', vmin = vmin, vmax = vmax)                                                   # 
-        axin = ax.inset_axes([0, -0.06, 1, 0.05])
-        fig.colorbar(w, cax=axin, orientation='horizontal')
-        ax.set_yticks([])
-        ax.set_xticks([])
-    
-    import matplotlib.pyplot as plt
-    
-    interferograms_mc = interferograms - np.mean(interferograms, axis = 1)[:, np.newaxis]
-    interferograms_ICASAR = time_courses @ sources
-    residual = interferograms_mc - interferograms_ICASAR
-    
-    if n_data > interferograms.shape[0]:
-        n_data = interferograms.shape[0]
-
-    
-    fig, axes = plt.subplots(3, n_data, figsize = (15,7))  
-    if n_data == 1:    
-        axes = np.atleast_2d(axes).T                                                # make 2d, and a column (not a row)
-    
-    row_labels = ['Data', 'Model', 'Resid.' ]
-    for ax, label in zip(axes[:,0], row_labels):
-        ax.set_ylabel(label)
-
-    for data_n in range(n_data):
-        vmin = np.min(np.stack((interferograms_mc[data_n,], interferograms_ICASAR[data_n,], residual[data_n])))
-        vmax = np.max(np.stack((interferograms_mc[data_n,], interferograms_ICASAR[data_n,], residual[data_n])))
-        plot_ifg(interferograms_mc[data_n,], axes[0,data_n], mask, vmin, vmax)
-        plot_ifg(interferograms_ICASAR[data_n,], axes[1,data_n], mask, vmin, vmax)
-        plot_ifg(residual[data_n,], axes[2,data_n], mask, vmin, vmax)
-
-#%%
 
 
 def plot_source_tc_correlations(sources, mask, dem = None, dem_to_ic_comparisons = None, tcs_to_tempbaselines_comparisons = None,
@@ -244,6 +427,65 @@ def plot_source_tc_correlations(sources, mask, dem = None, dem_to_ic_comparisons
     else:
         pass  
 
+
+#%%
+
+
+
+def visualise_ICASAR_inversion(interferograms, sources, time_courses, mask, n_data = 10):
+    """Given interferograms (that don't need to be mean centered), visualise how the 
+    BSS recontruction (A@S) can be used to reconstruct them.  
+    Inputs:
+        Interferograms | rank 2 array | interferograms as row vectors
+        sources | rank 2 array | souces as row vectors(e.g. 5 x 54000)
+        time_courses | rank 2 array | time courses as column vectors (e.g. 85 x 5)
+        mask | rank 2 array | to convert a row vector to a rank 2 array (image) for plotting.  
+        n_data | int | number of data to plot. 
+    Returns:
+        figure
+    History:
+        2021_03_03 | MEG | Written.  
+        2021_11_25 | MEG | Write the docs
+    """
+    import numpy as np
+    
+    def plot_ifg(ifg, ax, mask, vmin, vmax):
+        """
+        """
+        w = ax.imshow(col_to_ma(ifg, mask), interpolation ='none', aspect = 'equal', vmin = vmin, vmax = vmax)                                                   # 
+        axin = ax.inset_axes([0, -0.06, 1, 0.05])
+        fig.colorbar(w, cax=axin, orientation='horizontal')
+        ax.set_yticks([])
+        ax.set_xticks([])
+    
+    import matplotlib.pyplot as plt
+    
+    interferograms_mc = interferograms - np.mean(interferograms, axis = 1)[:, np.newaxis]
+    interferograms_ICASAR = time_courses @ sources
+    residual = interferograms_mc - interferograms_ICASAR
+    
+    if n_data > interferograms.shape[0]:
+        n_data = interferograms.shape[0]
+
+    
+    fig, axes = plt.subplots(3, n_data, figsize = (15,7))  
+    if n_data == 1:    
+        axes = np.atleast_2d(axes).T                                                # make 2d, and a column (not a row)
+    
+    row_labels = ['Data', 'Model', 'Resid.' ]
+    for ax, label in zip(axes[:,0], row_labels):
+        ax.set_ylabel(label)
+
+    for data_n in range(n_data):
+        vmin = np.min(np.stack((interferograms_mc[data_n,], interferograms_ICASAR[data_n,], residual[data_n])))
+        vmax = np.max(np.stack((interferograms_mc[data_n,], interferograms_ICASAR[data_n,], residual[data_n])))
+        plot_ifg(interferograms_mc[data_n,], axes[0,data_n], mask, vmin, vmax)
+        plot_ifg(interferograms_ICASAR[data_n,], axes[1,data_n], mask, vmin, vmax)
+        plot_ifg(residual[data_n,], axes[2,data_n], mask, vmin, vmax)
+
+
+
+
 #%%
 
 def signals_to_master_signal_comparison(signals, master_signal, density = False):
@@ -324,9 +566,71 @@ def create_all_ifgs(ifgs_r2, ifg_dates, max_n_all_ifgs = 1000):
         2021_04_29 | MEG | Add functionality to handle networks with breaks in them.  
     """
     import numpy as np
+    import datetime as dt
     from datetime import datetime, timedelta
     import random
     from icasar.aux2 import acquisitions_from_ifg_dates
+    
+    def split_network_to_lists(ifgs_r2, ifg_dates):
+        """Given a r2 of ifgs (ie row vectors) and a list of their dates (YYYYMMDD_YYYYMMDD), break these into lists that are 
+        continuous (i.e. no gaps)
+        """
+    
+        ifg_dates_continuous = []                                                                   # list of the list the dates for a continuous network
+        ifgs_r2_continuous = []                                                                     # and the incremental interferograms in that network.  
+        start_continuous_run = 0
+        for ifg_n in range(n_ifgs-1):                                                               # iterate                                 
+            if (ifg_dates[ifg_n][9:] != ifg_dates[ifg_n+1][:8]):                                   # if the dates don't agree (ie. the slave of one isn't the master of the other), we've got to the end of a network
+                ifg_dates_continuous.append(ifg_dates[start_continuous_run:ifg_n+1])                # +1 as want to include the last date in the selection
+                ifgs_r2_continuous.append(ifgs_r2[start_continuous_run:ifg_n+1,])
+                start_continuous_run = ifg_n+1                                                      # +1 so that when we index the next time, it doesn't include ifg_n
+            if ifg_n == n_ifgs -2:                                                                  #  if we've got to the end of the list.              
+                ifg_dates_continuous.append(ifg_dates[start_continuous_run:])                       # select to the end.  
+                ifgs_r2_continuous.append(ifgs_r2[start_continuous_run:,])
+                
+        return ifg_dates_continuous, ifgs_r2_continuous
+    
+    def create_all_possible_ifgs(networks):
+        """
+        """
+        n_networks = len(networks)
+        ifgs_all_r2 = []
+        dates_all_r1 = []
+        for n_network, network in enumerate(networks):                                                         # loop through each network.  
+            ifgs_r2_temp = network['ifgs_r2']
+            ifg_dates_temp = network['ifg_dates']
+            n_acq = ifgs_r2_temp.shape[0] + 1
+            
+            # 2a: convert from daisy chain of incremental to a relative to a single master at the start of the time series.  
+            acq1_def = np.zeros((1, n_pixs))                                                     # deformation is 0 at the first acquisition
+            ifgs_cs = np.cumsum(ifgs_r2_temp, axis = 0)                                          # convert from incremental to cumulative.  
+            ifgs_cs = np.vstack((acq1_def, ifgs_cs))                                             # add the 0 at first time ifg to the other cumulative ones. 
+            
+            # 2b: create all possible ifgs
+            ifgs_cube = np.zeros((n_acq, n_acq, n_pixs))                                    # cube to store all possible ifgs in
+            for i in range(n_acq):                                                          # used to loop through each column
+                ifgs_cube[:,i,] = ifgs_cs - ifgs_cs[i,]                                     # make one column (ie all the rows) by taking all the ifgs and subtracting one time from it
+               
+            # 2c: Get only the positive ones (ie the lower left quadrant)    
+            lower_left_indexes = triange_lower_left_indexes(n_acq)                              # get the indexes of the ifgs in the lower left corner (ie. non 0, and with unreveresed deformation.  )
+            ifgs_all_r2.append(ifgs_cube[lower_left_indexes[:,0], lower_left_indexes[:,1], :])        # get those ifgs and store as row vectors.  
+            
+            # 2d: Calculate the dates that the new ifgs run between.  
+            acq_dates = acquisitions_from_ifg_dates(ifg_dates_temp)                                                         # get the acquisitions from the ifg dates.  
+            ifg_dates_all_r2 = np.empty([n_acq, n_acq], dtype='U17')                                                        # initate an array that can hold unicode strings.  
+            for row_n, date1 in enumerate(acq_dates):                                                                       # loop through rows
+                for col_n, date2 in enumerate(acq_dates):                                                                   # loop through columns
+                    ifg_dates_all_r2[row_n, col_n] = f"{date2}_{date1}"
+            ifg_dates_all_r1 = list(ifg_dates_all_r2[lower_left_indexes[:,0], lower_left_indexes[:,1]])             # just get the lower left corner (like for the ifgs)
+    
+            dates_all_r1.append(ifg_dates_all_r1)
+    
+        # 3: convert lists back to a single matrix of all interferograms.  
+        ifgs_all_r2 = np.vstack(ifgs_all_r2)                                                                            # now one big array of n_ifgs x n_pixels
+        dates_all_r1 = [item for sublist in dates_all_r1 for item in sublist]                                           # dates_all_r1 is a list (one for each connected network) of lists (each ifg date).  The turns them to a singe list.  
+        
+        return ifgs_all_r2, dates_all_r1
+    
     
     def triange_lower_left_indexes(side_length):
         """ For a square matrix of size side_length, get the index of all the values that are in the lower
@@ -345,188 +649,111 @@ def create_all_ifgs(ifgs_r2, ifg_dates, max_n_all_ifgs = 1000):
         return lower_left_indexes
 
     
+    ########### begin main function
     n_ifgs, n_pixs = ifgs_r2.shape
         
+    
+    
     # 1: Determine if the network is continuous, and if not split it into lists
-    ifg_dates_continuous = []                                                                   # list of the dates for a continuous network
-    ifgs_r2_continuous = []                                                                     # and the incremental interferograms in that network.  
-    start_continuous_run = 0
-    for ifg_n in range(n_ifgs-1):
-        if (ifg_dates[ifg_n][9:] != ifg_dates[ifg_n+1][:8]):                                   # if the dates don't agree
-            ifg_dates_continuous.append(ifg_dates[start_continuous_run:ifg_n+1])                # +1 as want to include the last date in the selection
-            ifgs_r2_continuous.append(ifgs_r2[start_continuous_run:ifg_n+1,])
-            start_continuous_run = ifg_n+1                                                      # +1 so that when we index the next time, it doesn't include ifg_n
-        if ifg_n == n_ifgs -2:                                                                  # of if we've got to the end of the list.              
-            ifg_dates_continuous.append(ifg_dates[start_continuous_run:])                       # select to the end.  
-            ifgs_r2_continuous.append(ifgs_r2[start_continuous_run:,])
-            
+    ifg_dates_continuous, ifgs_r2_continuous = split_network_to_lists(ifgs_r2, ifg_dates)                               # If there is a break (gap) in the network, this splits the ifgs_dates and ifgs based on this.  
     n_networks = len(ifg_dates_continuous)                                                      # get the number of connected networks.  
     
-    # for item in ifgs_r2_continuous:
-    #     print(item.shape)
-    # for item in ifg_dates_continuous:
-    #     print(item)
-    #     print('\n')
-
-    # import copy
-    # ifg_dates_copy = copy.copy(ifg_dates)
-    # for ifg_list in ifg_dates_continuous:
-    #     for ifg in ifg_list:
-    #         try:
-    #             del ifg_dates_copy[ifg_dates_copy.index(ifg)]
-    #         except:
-    #             pass
-    # print(ifg_dates_copy)
-
-    # 2: Loop through each continuous network and make all possible ifgs.  
-    ifgs_all_r2 = []
-    dates_all_r1 = []
-    for n_network in range(n_networks):
-        ifgs_r2_temp = ifgs_r2_continuous[n_network]
-        ifg_dates_temp = ifg_dates_continuous[n_network]
-        n_acq = ifgs_r2_temp.shape[0] + 1
+    # 2: build a better set of information for each network.  
+    n_ifgs_all_total = 0                                                                                            # the total number of ifgs that can be made in the network
+    networks = []                                                                           # each item is a dict, containing ifg_dates, length_dats, n_ifgs, and n_ifgs_all (the number of unique interferograms that can be made)
+    for n_network in range(n_networks):  
+        network_dict = {'ifgs_r2'       : ifgs_r2_continuous[n_network],
+                        'ifg_dates'     : ifg_dates_continuous[n_network]}
         
-        # 2a: convert from daisy chain of incremental to a relative to a single master at the start of the time series.  
-        acq1_def = np.zeros((1, n_pixs))                                                     # deformation is 0 at the first acquisition
-        ifgs_cs = np.cumsum(ifgs_r2_temp, axis = 0)                                          # convert from incremental to cumulative.  
-        ifgs_cs = np.vstack((acq1_def, ifgs_cs))                                             # add the 0 at first time ifg to the other cumulative ones. 
-        
-        # 2b: create all possible ifgs
-        ifgs_cube = np.zeros((n_acq, n_acq, n_pixs))                                    # cube to store all possible ifgs in
-        for i in range(n_acq):                                                          # used to loop through each column
-            ifgs_cube[:,i,] = ifgs_cs - ifgs_cs[i,]                                     # make one column (ie all the rows) by taking all the ifgs and subtracting one time from it
+        network_start_date = dt.datetime.strptime(ifg_dates_continuous[n_network][0][:8], '%Y%m%d')
+        network_end_date = dt.datetime.strptime(ifg_dates_continuous[n_network][-1][9:], '%Y%m%d')
+        network_dict['length_days'] = (network_end_date - network_start_date).days
+        network_dict['n_ifgs'] = network_dict['ifgs_r2'].shape[0]
+        network_dict['n_ifgs_all'] = int(((network_dict['n_ifgs']+1)**2 - (network_dict['n_ifgs']+1)) / 2)                  # +1 as there is 1 more acquisition than incremental interferogram.  
+        networks.append(network_dict)
+        n_ifgs_all_total += network_dict['n_ifgs_all']                                                          # add to the running total of the total number of ifgs
            
-        # 2c: Get only the positive ones (ie the lower left quadrant)    
-        lower_left_indexes = triange_lower_left_indexes(n_acq)                              # get the indexes of the ifgs in the lower left corner (ie. non 0, and with unreveresed deformation.  )
-        ifgs_all_r2.append(ifgs_cube[lower_left_indexes[:,0], lower_left_indexes[:,1], :])        # get those ifgs and store as row vectors.  
+    #3: determine if we can make all ifgs, or if we need to make only some of them.  
+    if n_ifgs_all_total < max_n_all_ifgs:                                                               # if we can just make all ifgs, 
+        ifgs_all_r2, dates_all_r1 = create_all_possible_ifgs(networks)
         
-        # 2d: Calculate the dates that the new ifgs run between.  
-        acq_dates = acquisitions_from_ifg_dates(ifg_dates_temp)                                                         # get the acquisitions from the ifg dates.  
-        ifg_dates_all_r2 = np.empty([n_acq, n_acq], dtype='U17')                                                        # initate an array that can hold unicode strings.  
-        for row_n, date1 in enumerate(acq_dates):                                                                       # loop through rows
-            for col_n, date2 in enumerate(acq_dates):                                                                   # loop through columns
-                ifg_dates_all_r2[row_n, col_n] = f"{date2}_{date1}"
-        ifg_dates_all_r1 = list(ifg_dates_all_r2[lower_left_indexes[:,0], lower_left_indexes[:,1]])             # just get the lower left corner (like for the ifgs)
+    else:    
+        ifgs_all_r2 = []                                                                                                # list with entry for each entwork
+        dates_all_r1 = []                                                                                               # list for all networks
+        for network in networks:
+            n_ifgs_from_network = int(max_n_all_ifgs * (network['n_ifgs_all'] / n_ifgs_all_total))                    # get the fraction of ifgs that each network will provide ot the total.  e.g. network 1 = 800, network 2 = 800, but 1000 in total, 500 from each network
 
-        dates_all_r1.append(ifg_dates_all_r1)
+            # 0: get some info about the ifgs
+            n_pixs = network['ifgs_r2'].shape[1]
+            n_acq = network['n_ifgs'] + 1
 
-    # 3: convert lists back to a single matrix of all interferograms.  
-    ifgs_all_r2 = np.vstack(ifgs_all_r2)                                                                            # now one big array of n_ifgs x n_pixels
-    dates_all_r1 = [item for sublist in dates_all_r1 for item in sublist]                                           # dates_all_r1 is a list (one for each connected network) of lists (each ifg date).  The turns them to a singe list.  
+            # 1: Make the cumulative ifgs
+            acq1_def = np.zeros((1, n_pixs))                                                     # deformation is 0 at the first acquisition
+            ifgs_cs = np.cumsum(network['ifgs_r2'], axis = 0)                                          # convert from incremental to cumulative.  
+            ifgs_cs = np.vstack((acq1_def, ifgs_cs))                                             # add the 0 at first time ifg to the other cumulative ones.     
+                   
+            # 2: get the acquisition dates:
+            acq_dates = acquisitions_from_ifg_dates(network['ifg_dates'])                                                         # get the acquisitions from the ifg dates.  
+
+            # 3: create the list of acquisiton dates that is the correct (for this network) length
+            ifg_acq_start_acq_ends = []                                                                                  # list of tuples of acquisitions each ifg will be between
+            while len(ifg_acq_start_acq_ends) < n_ifgs_from_network:                                                     # until we have enough...
+                acq_start = np.random.randint(0, n_acq)                                                                 # random start acq
+                acq_end = np.random.randint(0, n_acq)                                                                   # random end acq
+                if (acq_start < acq_end) and ((acq_start, acq_end) not in ifg_acq_start_acq_ends):                       # if start is before end (ie only in lower left of all acquisitions square) and not already in list of pairs
+                    ifg_acq_start_acq_ends.append((acq_start, acq_end))                                                  # add to pair
+            
+            # 4: make the ifgs for those acquisition dates.  
+            for ifg_acq_start_acq_end in ifg_acq_start_acq_ends:                                                        # iterate through all the pairs we need to get 
+                ifgs_all_r2.append(ifgs_cs[ifg_acq_start_acq_end[1],] - ifgs_cs[ifg_acq_start_acq_end[0],])               # subtract one ifg from the other (end - start)
+                dates_all_r1.append(f"{acq_dates[ifg_acq_start_acq_end[0]]}_{acq_dates[ifg_acq_start_acq_end[1]]}")         # get teh dates that that ifg spans
+                
+        # 5: convert lists back to a single matrix of all interferograms.  
+        ifgs_all_r2 = np.vstack(ifgs_all_r2)                                                                            # now one big array of n_ifgs x n_pixels
+                    
+    print(f"When creating all interferograms, {ifgs_r2.shape[0]} were passed to the function, and these were found to make {n_network+1} connected networks.  "
+          f"From these, {ifgs_all_r2.shape[0]} interferograms were created.  ")
     
-    # 4: Possibly delete some of these if we have too many:
-    if ifgs_all_r2.shape[0] > max_n_all_ifgs:
-        retained_args = np.arange(ifgs_all_r2.shape[0])
-        random.shuffle(retained_args)
-        retained_args = retained_args[:max_n_all_ifgs]
-        
-    ifgs_all_r2 = ifgs_all_r2[retained_args,:]
-    dates_all_r1 = [dates_all_r1[retained_arg] for retained_arg in retained_args]                                      # surely there is a better way to index a list with an array?  
+    return ifgs_all_r2, dates_all_r1    
     
-    return ifgs_all_r2, dates_all_r1
 
 
-  
 #%%
-def plot_spatial_signals(spatial_map, pixel_mask, timecourse, shape, title, shared = 0, 
-                         temporal_baselines = None, figures = "window",  png_path = './'):
-    """
-    Input:
-        spatial map | pxc matrix of c component maps (p pixels)
-        pixel_mask | mask to turn spaital maps back to regular grided masked arrays
-        codings | cxt matrix of c time courses (t long)   
-        shape | tuple | the shape of the grid that the spatial maps are reshaped to
-        title | string | figure tite and png filename (nb .png will be added, don't include here)
-        shared | 0 or 1 | if 1, spatial maps share colorbar and time courses shared vertical axis
-        Temporal_baselines | x axis values for time courses.  Useful if some data are missing (ie the odd 24 day ifgs in a time series of mainly 12 day)
-        figures | string,  "window" / "png" / "png+window" | controls if figures are produced (either as a window, saved as a png, or both)
-        png_path | string | if a png is to be saved, a path to a folder can be supplied, or left as default to write to current directory.  
-        
+
+def create_cumulative_ifgs(ifgs_dc, ifg_dates_dc):
+    """ Given a time series of incremental (daisy chain) interferograms, calculate the cumulative interferograms  relative to the first acquisition.  
+    Inputs:
+        ifgs_dc | rank 2 array | ifgs as row vectors.  
+        ifg_dates_dc | list | list of YYYYMMDD_YYYYMMDD 
     Returns:
-        Figure, either as a window or saved as a png
-        
-    2017/02/17 | modified to use masked arrays that are given as vectors by spatial map, but can be converted back to 
-                 masked arrays using the pixel mask    
-    2017/05/12 | shared scales as decrived in 'shared'
-    2017/05/15 | remove shared colorbar for spatial maps
-    2017/10/16 | remove limit on the number of componets to plot (was 5)
-    2017/12/06 | Add a colorbar if the plots are shared, add an option for the time courses to be done in days
-    2017/12/?? | add the option to pass temporal baselines to the function
-    2020/03/03 | MEG | Add option to save figure as png and close window
+        ifgs_cum | rank 2 array | ifgs as row vectors, cumulative and relative to the first acquisition.  
+        ifg_dates_cum | list | list of YYYYMMDD_YYYYMMDD 
+    History:
+        2021_11_29 | MEG | Written.  
+        2021_11_30 | MEG | Update so that doesn't create the acquisition 0 - acquisition 0 interferogram of 0 displacement.  
+
     """
-    
     import numpy as np
-    import numpy.ma as ma  
-    import matplotlib.pyplot as plt
-    import matplotlib
+    from icasar.aux2 import baseline_from_names
     
-    from icasar.aux2 import remappedColorMap, truncate_colormap
+    # 0: First make the ifgs, v1 that uses that has acquisition 0 to acquisition 0 as a row of 0 displacements at the start
+    # ifgs_cum_0 = np.zeros((1, ifgs_dc.shape[1]))                            # 0 displacement on first acquistion
+    # ifgs_cum = np.cumsum(ifgs_dc, axis = 0)                                 # displacement to last date of each daisy chain interferogram.  
+    # ifgs_cum = np.vstack((ifgs_cum_0, ifgs_cum))                            # combine so first acuqisiton has 0 displacmenent.  
+    # 0b: or ignores a0 to a0:
+    ifgs_cum = np.cumsum(ifgs_dc, axis = 0)                                 # displacement to last date of each daisy chain interferogram.  
+
     
-    def linegraph(sig, ax, temporal_baselines = None):
-        """ signal is a 1xt row vector """
+    # 1: then make the ifg dates.  
+    acq_0 = ifg_dates_dc[0][:8]
+    #ifg_dates_cum = [f"{acq_0}_{acq_0}"]
+    ifg_dates_cum = []
+    for ifg_date_dc in ifg_dates_dc:
+        ifg_dates_cum.append(f"{acq_0}_{ifg_date_dc[9:]}")
+    
+    return ifgs_cum, ifg_dates_cum
         
-        if temporal_baselines is None:
-            times = sig.size
-            a = np.arange(times)
-        else:
-            a = temporal_baselines
-        ax.plot(a,sig,marker='o', color='k')
-        ax.axhline(y=0, color='k', alpha=0.4) 
-        
- 
-    
-    # colour map stuff
-    ifg_colours = plt.get_cmap('coolwarm')
-    cmap_mid = 1 - np.max(spatial_map)/(np.max(spatial_map) + abs(np.min(spatial_map)))          # get the ratio of the data that 0 lies at (eg if data is -15 to 5, ratio is 0.75)
-    if cmap_mid < (1/257):                                                                       # this is a fudge so that if plot starts at 0 doesn't include the negative colorus for the smallest values
-        ifg_colours_cent = remappedColorMap(ifg_colours, start=0.5, midpoint=0.5, stop=1.0, name='shiftedcmap')
-    else:
-        ifg_colours_cent = remappedColorMap(ifg_colours, start=0.0, midpoint=cmap_mid, stop=1.0, name='shiftedcmap')
-    
-    #make a list of ifgs as masked arrays (and not column vectors)
-    spatial_maps_ma = []
-    for i in range(np.size(spatial_map,1)):
-        spatial_maps_ma.append(ma.array(np.zeros(pixel_mask.shape), mask = pixel_mask ))
-        spatial_maps_ma[i].unshare_mask()
-        spatial_maps_ma[i][~spatial_maps_ma[i].mask] = spatial_map[:,i].ravel()
-    tmp, n_sources = spatial_map.shape
-#    if n_sources > 5:
-#        n_sources = 5
-    del tmp
-    
-    f, (ax_all) = plt.subplots(2, n_sources, figsize=(15,7))
-    f.suptitle(title, fontsize=14)
-    f.canvas.manager.set_window_title(title)
-    for i in range(n_sources):    
-        im = ax_all[0,i].imshow(spatial_maps_ma[i], cmap = ifg_colours_cent, vmin = np.min(spatial_map), vmax = np.max(spatial_map))
-        ax_all[0,i].set_xticks([])
-        ax_all[0,i].set_yticks([])
-#        if shared == 0:
-#            ax_all[0,i].imshow(spatial_maps_ma[i])
-#        else:
-#            im = ax_all[0,i].imshow(spatial_maps_ma[i], vmin = np.min(spatial_map) , vmax =  np.max(spatial_map))
-    for i in range(n_sources):
-        linegraph(timecourse[i,:], ax_all[1,i], temporal_baselines)
-        if temporal_baselines is not None: 
-            ax_all[1,i].set_xlabel('Days')
-        if shared ==1:
-            ax_all[1,i].set_ylim([np.min(timecourse) , np.max(timecourse)])
-            
-            
-    if shared == 1:                                                             # if the colourbar is shared between each subplot, the axes need extending to make space for it.
-        f.tight_layout(rect=[0, 0, 0.94, 1])
-        cax = f.add_axes([0.94, 0.6, 0.01, 0.3])
-        f.colorbar(im, cax=cax, orientation='vertical')
-  
-    if figures == 'window':                                                                 # possibly save the output
-        pass
-    elif figures == "png":
-        f.savefig(f"{png_path}/{title}.png")
-        plt.close()
-    elif figures == 'png+window':
-        f.savefig(f"{png_path}/{title}.png")
-    else:
-        pass
+
     
 
 #%%    
@@ -944,3 +1171,6 @@ def prepare_legends_for_2d(clusters_by_max_Iq_no_noise, Iq):
         legend_dict = {'elements' : legend_elements,
                        'labels'   : legend_labels}
         return legend_dict
+
+
+#%%
