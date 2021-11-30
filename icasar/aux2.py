@@ -138,6 +138,7 @@ def plot_2d_interactive_fig(xy, colours, spatial_data = None, temporal_data = No
                 # 3: Plot on the inset axes
                 if temporal_data is not None:
                     inset_axes.plot(temporal_data['xvals'], temporal_data['tcs_r2'][point_n,])                            # draw the inset axes time course graph
+                    inset_axes.axhline(0)
                 if spatial_data is not None:
                     inset_axes.imshow(spatial_data['images_r3'][point_n,])                                                      # or draw the inset axes image
                 inset_axes.set_xticks([])                                                                                       # and remove ticks (and so labels too) from x
@@ -339,6 +340,8 @@ def baseline_from_names(names_list):
         slave = datetime.strptime(file.split('_')[-1][:8], '%Y%m%d')
         baselines.append(-1 *(master - slave).days)
     return baselines
+
+
 
 
 #%% Small plot functions

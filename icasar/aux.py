@@ -717,6 +717,41 @@ def create_all_ifgs(ifgs_r2, ifg_dates, max_n_all_ifgs = 1000):
     return ifgs_all_r2, dates_all_r1    
     
 
+
+#%%
+
+def create_cumulative_ifgs(ifgs_dc, ifg_dates_dc):
+    """ Given a time series of incremental (daisy chain) interferograms, calculate the cumulative interferograms  relative to the first acquisition.  
+    Inputs:
+        ifgs_dc | rank 2 array | ifgs as row vectors.  
+        ifg_dates_dc | list | list of YYYYMMDD_YYYYMMDD 
+    Returns:
+        ifgs_cum | rank 2 array | ifgs as row vectors, cumulative and relative to the first acquisition.  
+        ifg_dates_cum | list | list of YYYYMMDD_YYYYMMDD 
+    History:
+        2021_11_29 | MEG | Written.  
+        2021_11_30 | MEG | Update so that doesn't create the acquisition 0 - acquisition 0 interferogram of 0 displacement.  
+
+    """
+    import numpy as np
+    from icasar.aux2 import baseline_from_names
+    
+    # 0: First make the ifgs, v1 that uses that has acquisition 0 to acquisition 0 as a row of 0 displacements at the start
+    # ifgs_cum_0 = np.zeros((1, ifgs_dc.shape[1]))                            # 0 displacement on first acquistion
+    # ifgs_cum = np.cumsum(ifgs_dc, axis = 0)                                 # displacement to last date of each daisy chain interferogram.  
+    # ifgs_cum = np.vstack((ifgs_cum_0, ifgs_cum))                            # combine so first acuqisiton has 0 displacmenent.  
+    # 0b: or ignores a0 to a0:
+    ifgs_cum = np.cumsum(ifgs_dc, axis = 0)                                 # displacement to last date of each daisy chain interferogram.  
+
+    
+    # 1: then make the ifg dates.  
+    acq_0 = ifg_dates_dc[0][:8]
+    #ifg_dates_cum = [f"{acq_0}_{acq_0}"]
+    ifg_dates_cum = []
+    for ifg_date_dc in ifg_dates_dc:
+        ifg_dates_cum.append(f"{acq_0}_{ifg_date_dc[9:]}")
+    
+    return ifgs_cum, ifg_dates_cum
         
 
     
@@ -1136,3 +1171,6 @@ def prepare_legends_for_2d(clusters_by_max_Iq_no_noise, Iq):
         legend_dict = {'elements' : legend_elements,
                        'labels'   : legend_labels}
         return legend_dict
+
+
+#%%

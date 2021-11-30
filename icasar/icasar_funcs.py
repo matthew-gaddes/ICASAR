@@ -99,6 +99,17 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         component_plot                                  # with ICASAR sources
         r2_arrays_to_googleEarth                        # geocode spatial sources and make a .kmz for use with Google Earth.  
     """
+
+
+    import matplotlib.pyplot as plt
+    plt.switch_backend('Qt5Agg')
+    import sys
+    sys.path.append("/home/matthew/university_work/python_stuff/python_scripts")
+    from small_plot_functions import matrix_show
+
+
+
+
     
     # external functions
     import numpy as np
@@ -108,12 +119,46 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     import os                                                                    # ditto
     import pickle                                                                # to save outputs.  
     from pathlib import Path
+    import pdb
     # internal functions
     from icasar.blind_signal_separation import PCA_meg2
     from icasar.aux import  bss_components_inversion, maps_tcs_rescale, r2_to_r3, r2_arrays_to_googleEarth
     from icasar.aux import plot_pca_variance_line, plot_temporal_signals, two_spatial_signals_plot
-    from icasar.aux import prepare_point_colours_for_2d, prepare_legends_for_2d, create_all_ifgs, signals_to_master_signal_comparison, plot_source_tc_correlations
+    from icasar.aux import prepare_point_colours_for_2d, prepare_legends_for_2d, create_all_ifgs, create_cumulative_ifgs, signals_to_master_signal_comparison, plot_source_tc_correlations
     from icasar.aux2 import plot_2d_interactive_fig, baseline_from_names, update_mask_sources_ifgs
+    
+    
+    class ifg_timeseries():
+        def __init__(self, mixtures, ifg_dates):
+            self.mixtures = mixtures
+            self.ifg_dates = ifg_dates
+            self.print_timeseries_info()
+            self.mean_centre_in_space()
+            self.mean_centre_in_time()
+            self.baselines_from_names()
+                        
+        def print_timeseries_info(self):
+            print(f"This interferogram timeseries has {self.mixtures.shape[0]} times and {self.mixtures.shape[1]} pixels.  ")
+            
+        def mean_centre_in_space(self):
+            import numpy as np
+            self.means_space = np.mean(self.mixtures, axis = 1)
+            self.mixtures_mc_space = self.mixtures - self.means_space[:, np.newaxis]
+            
+        def mean_centre_in_time(self):
+            import numpy as np
+            self.means_time = np.mean(self.mixtures, axis = 0)
+            self.mixtures_mc_time = self.mixtures - self.means_time[np.newaxis, :]
+            
+            
+        def baselines_from_names(self):
+            from datetime import datetime, timedelta
+            baselines = []
+            for file in self.ifg_dates:
+                master = datetime.strptime(file.split('_')[-2], '%Y%m%d')
+                slave = datetime.strptime(file.split('_')[-1][:8], '%Y%m%d')
+                baselines.append(-1 *(master - slave).days)
+            self.t_baselines = baselines
 
     
     # -5 Check inputs, unpack either spatial or temporal data, and check for nans
@@ -128,12 +173,12 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         print(f"From the data passed to ICASAR, I understand it to be temporal data (e.g. time series of sound recordings)")
         spatial = False
     
-    # -4: main structure for checking inputs
+    # -4: main section for checking inputs
     if spatial:                                                                                                                 # if we have spatial data
         if np.max(np.isnan(spatial_data['ifgs_dc'])):
             raise Exception("Unable to proceed as the data ('spatial_data['dc_ifgs']') contains Nans.  ")
         mask = spatial_data['mask']                                                                                         # the mask that converts row vector mixtures into 2d (rank 2) arrays.  
-        spatial_data['t_baselines_dc'] = baseline_from_names(spatial_data['ifg_dates_dc'])                                  # we can use these to calcaulte temporal baselines
+        #spatial_data['t_baselines_dc'] = baseline_from_names(spatial_data['ifg_dates_dc'])                                  # we can use these to calcaulte temporal baselines
         n_ifgs = spatial_data['ifgs_dc'].shape[0]                                                                           # get the number of incremental ifgs
         if n_ifgs != len(spatial_data['ifg_dates_dc']):                                                                     # and check it's equal to the list of ifg dates (YYYYMMDD_YYYYMMDD)
             raise Exception(f"There should be an equal number of incremental interferogram and dates (in the form YYYYMMDD_YYYYMMDD), but they appear to be different.  Exiting...")
@@ -173,15 +218,16 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
             if create_all_ifgs_flag:
                 print(f"With tica (tICA), create_all_ifgs_flag cannot be True (but is), so it is being set to False.  ")
                 create_all_ifgs_flag = False
+            print(f"For tICA, the cumulative interferograms are required.  These will be calculated from the incremental (daisy chain) interferograms.  ")
+                
     else:                                                                                                                           # or we could do temporal data.  
         xvals = temporal_data['xvals']
         print(f"Deleting the 3 arguments that only apply to spatial data (sica_tica, create_all_ifgs_flag, max_n_all_ifgs) ")
         del sica_tica, create_all_ifgs_flag, max_n_all_ifgs
         if np.max(np.isnan(temporal_data['mixtures_r2'])):
             raise Exception("Unable to proceed as the data ('spatial_data['mixtures_r2']') contains Nans.  ")
-      
-
-                        
+   
+                       
     #-3:  sort out various things for figures, and check input is of the correct form
     if type(out_folder) == str:
         print(f"Trying to convert the 'out_folder' arg which is a string to a pathlib Path.  ")
@@ -230,25 +276,30 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     n_converge_no_bootstrapping = bootstrapping_param[1]  
     
 
-    # -0:  Possibly create all interferograms, create the arary of mixtures (X), and mean centre
+    # -0:  Create all interferograms, create the arary of mixtures (X), and mean centre
     if spatial:
-        spatial_data['ifgs_dc_mc'] = spatial_data['ifgs_dc'] -  np.mean(spatial_data['ifgs_dc'], axis = 1)[:,np.newaxis]                                     # also mean centre the daisy chain interferograms       
-        spatial_data['ifgs_all'], spatial_data['ifg_dates_all'] = create_all_ifgs(spatial_data['ifgs_dc'], spatial_data['ifg_dates_dc'], max_n_all_ifgs)     # create all ifgs, even if we don't use them.  
-        spatial_data['ifgs_all_mc'] = spatial_data['ifgs_all'] -  np.mean(spatial_data['ifgs_all'], axis = 1)[:,np.newaxis]                                  # mean centre all the inteferograms.  
-        spatial_data['t_baselines_all'] = baseline_from_names(spatial_data['ifg_dates_all'])                                                                 # and calculate their temporal baselines.  
+        print(f"Creating all possible variations of the time series (incremental/daisy chain, cumulative, and all possible).  ")
+        ifgs_all_r2, ifg_dates_all = create_all_ifgs(spatial_data['ifgs_dc'], spatial_data['ifg_dates_dc'], max_n_all_ifgs)     # create all ifgs, even if we don't use them.  
+        ifgs_cum_r2, ifg_dates_cum = create_cumulative_ifgs(spatial_data['ifgs_dc'], spatial_data['ifg_dates_dc'])
+        ifgs_dc = ifg_timeseries(spatial_data['ifgs_dc'], spatial_data['ifg_dates_dc'])            
+        ifgs_all = ifg_timeseries(ifgs_all_r2, ifg_dates_all)            
+        ifgs_cum = ifg_timeseries(ifgs_cum_r2, ifg_dates_cum)            
+        del ifgs_all_r2, ifg_dates_all, ifgs_cum_r2, ifg_dates_cum
+        
         if sica_tica == 'sica':
             if create_all_ifgs_flag:
-                X = spatial_data['ifgs_all']                                                                                                        # if we're creating all pairs, these will be used as the mixtuers
+                X_mc = ifgs_all.mixtures_mc_space                                                                                                        # if we're creating all pairs, these will be used as the mixtuers
+                X_mean = ifgs_all.means_space
             else:
-                X = spatial_data['ifgs_dc']                                                                                                         # if not, the incremental (daisy chain) of interferograms will be
+                X_mc = ifgs_dc.mixtures_mc_space                                                                                                         # if not, the incremental (daisy chain) of interferograms will be
+                X_means = ifgs_dc.means_space
         elif sica_tica == 'tica':                                                                                                                   # if we're doing temporal ica with spatial data, the mixtures need to be the transpose
-            X = spatial_data['ifgs_dc'].T
+            X_mc = ifgs_cum.mixtures_mc_time.T                                                                                                          # as cumulative and transpose, effectively the time series for each point.  
+            X_mean = ifgs_cum.means_time
     else:
         X = temporal_data['mixtures_r2']
         
-    X_mean = np.mean(X, axis = 1)[:,np.newaxis]                                                                                             # get the mean for each ifg (ie along rows.  )
-    X_mc = X - X_mean                                                                                                                       # mean centre the data (along rows)
-    n_mixtures = np.size(X_mc, axis = 0)                                                                                                    # each row is a new mixture
+    
           
     # 1: do sPCA once (and possibly create a figure of the PCA sources)
     print('Performing PCA to whiten the data....', end = "")
@@ -259,35 +310,34 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         if sica_tica == 'sica':
             S_pca, A_pca = maps_tcs_rescale(S_pca[:n_comp,:], A_pca[:,:n_comp])                          # rescale to new desicred range, and truncate to desired number of components.  
         elif sica_tica == 'tica':
-            A_pca, S_pca = maps_tcs_rescale(A_pca[:, :n_comp].T, S_pca[:n_comp, :].T)                          # rescale to new desicred range, spatial patterns are now in A
-            S_pca_dc = S_pca.T
+            A_pca, S_pca_cum = maps_tcs_rescale(A_pca[:, :n_comp].T, S_pca[:n_comp, :].T)                # rescale to new desicred range, NB.  spatial patterns are in A
+            S_pca_cum = S_pca_cum.T                                                                     # these are the cumulative time courses, should still be mean centered (have checked this)  
             A_pca = A_pca.T
+            del S_pca
     else:
         S_pca = S_pca[:n_comp,:]                                                                            # truncate to desirec number of components
         A_pca =  A_pca[:,:n_comp]
+        
     
     if fig_kwargs['figures'] != "none":
         plot_pca_variance_line(PC_vals, title = '01_PCA_variance_line', **fig_kwargs)
         if spatial:
             if sica_tica == 'sica':
-                inversion_results = bss_components_inversion(S_pca, [spatial_data['ifgs_dc_mc'], spatial_data['ifgs_all_mc']])                                                                  # invert to fit the incremetal ifgs and all ifgs
+                inversion_results = bss_components_inversion(S_pca, [ifgs_dc.mixtures_mc_space, ifgs_all.mixtures_mc_space])                                                                  # invert to fit the incremetal ifgs and all ifgs
                 source_residuals = inversion_results[0]['residual']        
                 A_pca_dc = inversion_results[0]['tcs'].T                                                                                                                                        # in sICA, time courses are in A
                 A_pca_all = inversion_results[1]['tcs'].T
-                two_spatial_signals_plot(S_pca, spatial_data['mask'], spatial_data['dem'], A_pca_dc, A_pca_all, spatial_data['t_baselines_dc'], spatial_data['t_baselines_all'],
+                two_spatial_signals_plot(S_pca, spatial_data['mask'], spatial_data['dem'], A_pca_dc, A_pca_all, ifgs_dc.t_baselines, ifgs_all.t_baselines,
                                          "02_PCA_sources", spatial_data['ifg_dates_dc'], fig_kwargs)
-            elif sica_tica == 'tica':#
-                inversion_results = bss_components_inversion(S_pca_dc, [spatial_data['ifgs_dc_mc'].T])#, spatial_data['ifgs_all_mc']])                                                                # invert to fit the incremetal ifgs and all ifgs
-                source_residuals = inversion_results[0]['residual']        
-                A_pca = (inversion_results[0]['tcs'])                                                                                                                # A are images as row vectors for tiCA
-                inversion_results = bss_components_inversion(A_pca, [spatial_data['ifgs_all_mc']])                                                                # invert to fit the incremetal ifgs and all ifgs
-                S_pca_all = inversion_results[0]['tcs']                                                                                                                                        # in sICA, time courses are in A
-                two_spatial_signals_plot(A_pca, spatial_data['mask'], spatial_data['dem'], S_pca_dc.T, S_pca_all.T, spatial_data['t_baselines_dc'], spatial_data['t_baselines_all'],          # 
+            elif sica_tica == 'tica':
+                S_pca_dc = np.diff(S_pca_cum, axis = 1, prepend = 0)                                                                                                      # the diff of the cumluative time courses is the incremnetal (daisy chain) time course.  Prepend a 0 to make it thesame size as the original diays chain (ie. the capture the difference between 0 and first value).  
+                two_spatial_signals_plot(A_pca.T, spatial_data['mask'], spatial_data['dem'], S_pca_dc.T, S_pca_cum.T, ifgs_dc.t_baselines, ifgs_cum.t_baselines,          # first set of are time courses and times for daisy chain, second is for cumulative
                                          "02_PCA_sources", spatial_data['ifg_dates_dc'], fig_kwargs)                    
         else:
             plot_temporal_signals(S_pca, '02_PCA_sources', **fig_kwargs)
     
-        
+    #pdb.set_trace()
+
     # 2: Make or load the results of the multiple ICA runs.  
     if load_fastICA_results:
         print(f"Loading the results of multiple FastICA runs.  ")
@@ -337,10 +387,6 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     S_ica, labels_hdbscan, xy_tsne, clusters_by_max_Iq_no_noise, Iq  = bootstrapped_sources_to_centrotypes(sources_all_r2, hdbscan_param, tsne_param)        # do the clustering and project to a 2d plane.  clusters_by_max_Iq_no_noise is an array of which cluster number is best (ie has the highest Iq)
     Iq_sorted = np.sort(Iq)[::-1]               
     n_clusters = S_ica.shape[0]                                                                     # the number of sources/centrotypes is equal to the number of clusters    
-    if spatial:
-        if sica_tica == 'tica':
-            S_ica_dc = S_ica                                                                                                                                      # if temporal, sources are time courses, and only for daisy chain ifgs
-            del S_ica
     labels_colours = prepare_point_colours_for_2d(labels_hdbscan, clusters_by_max_Iq_no_noise)                                                                # make a list of colours so that each point with the same label has the same colour, and all noise points are grey
     legend_dict = prepare_legends_for_2d(clusters_by_max_Iq_no_noise, Iq)    
     marker_dict = {'labels' : np.ravel(np.hstack((np.zeros((1, n_comp*n_converge_bootstrapping)), np.ones((1, n_comp*n_converge_no_bootstrapping)))))}        # boostrapped are labelled as 0, and non bootstrapped as 1
@@ -359,7 +405,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
                                     fig_filename = plot_2d_labels['title'], **fig_kwargs)
         elif sica_tica == 'tica':
             temporal_data_S_all = {'tcs_r2' : sources_all_r2,
-                                   'xvals'  : np.cumsum(spatial_data['t_baselines_dc']) }                                                                               # make a dictionary of the sources recovered from each run
+                                   'xvals'  : np.cumsum(ifgs_dc.t_baselines) }                                                                               # make a dictionary of the sources recovered from each run
             plot_2d_interactive_fig(xy_tsne.T, colours = labels_colours, temporal_data = temporal_data_S_all,                                        # make the 2d interactive plot
                                 labels = plot_2d_labels, legend = legend_dict, markers = marker_dict, inset_axes_side = inset_axes_side,
                                 fig_filename = plot_2d_labels['title'], **fig_kwargs)
@@ -383,62 +429,22 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
                 two_spatial_signals_plot(S_ica, spatial_data['mask'], spatial_data['dem'], A_ica_dc, A_ica_all, spatial_data['t_baselines_dc'], spatial_data['t_baselines_all'],
                                                  "03_ICA_sources", spatial_data['ifg_dates_dc'], fig_kwargs)
         elif sica_tica == 'tica':
-            inversion_results = bss_components_inversion(S_ica_dc, [spatial_data['ifgs_dc_mc'].T])
-            source_residuals = inversion_results[0]['residual']        
-            A_ica = (inversion_results[0]['tcs'])                                                                                                                # A are images as row vectors for tiCA
-            inversion_results = bss_components_inversion(A_ica, [spatial_data['ifgs_all_mc']])                                                                # invert to fit the incremetal ifgs and all ifgs
-            S_ica_all = inversion_results[0]['tcs']                                                                                                                                        # in sICA, time courses are in A
+            S_ica_cum = S_ica                                                                                                                                         # if temporal, sources are time courses, and are for the cumulative ifgs (as the transpose of these was given to the ICA function)
+            S_ica_dc = np.diff(S_ica_cum, axis = 1, prepend = 0)                                                                                                      # the diff of the cumluative time courses is the incremnetal (daisy chain) time course.  Prepend a 0 to make it thesame size as the original diays chain (ie. the capture the difference between 0 and first value).  
+            del S_ica           
+            inversion_results = bss_components_inversion(S_ica_cum, [ifgs_cum.mixtures_mc_time.T])
+            A_ica = inversion_results[0]['tcs']                                                                                                                     # These are the spatial sources as row vectors.  
+            source_residuals = inversion_results[0]['residual']
             if fig_kwargs['figures'] != "none":
-                two_spatial_signals_plot(A_pca, spatial_data['mask'], spatial_data['dem'], S_pca_dc.T, S_pca_all.T, spatial_data['t_baselines_dc'], spatial_data['t_baselines_all'],          # 
+                two_spatial_signals_plot(A_ica, spatial_data['mask'], spatial_data['dem'], S_ica_dc.T, S_ica_cum.T, ifgs_dc.t_baselines, ifgs_cum.t_baselines,          # 
                                          "03_ICA_sources", spatial_data['ifg_dates_dc'], fig_kwargs)                    
+
     else:
         inversion_results = bss_components_inversion(S_ica, [X_mc])                                                 # invert to fit the mean centered mixture.    
         source_residuals = inversion_results[0]['residual']                                                         # how well we fit those
         A_ica = inversion_results[0]['tcs'].T                                                                       # and the time coruses to remake them.                  
                 
-            #     if sica_tica == 'sica':
-            #     inversion_results = bss_components_inversion(S_pca, [spatial_data['ifgs_dc_mc'], spatial_data['ifgs_all_mc']])                                                                  # invert to fit the incremetal ifgs and all ifgs
-            #     source_residuals = inversion_results[0]['residual']        
-            #     A_pca_dc = inversion_results[0]['tcs'].T                                                                                                                                        # in sICA, time courses are in A
-            #     A_pca_all = inversion_results[1]['tcs'].T
-            #     two_spatial_signals_plot(S_pca, spatial_data['mask'], spatial_data['dem'], A_pca_dc, A_pca_all, spatial_data['t_baselines_dc'], spatial_data['t_baselines_all'],
-            #                              "02_PCA_sources", spatial_data['ifg_dates_dc'], fig_kwargs)
-                
-            # elif sica_tica == 'tica':
-            #     inversion_results = bss_components_inversion(A_pca.T, [spatial_data['ifgs_dc_mc'], spatial_data['ifgs_all_mc']])                                                                # invert to fit the incremetal ifgs and all ifgs
-            #     source_residuals = inversion_results[0]['residual']        
-            #     S_pca_dc = (inversion_results[0]['tcs'].T).T                                                                                                                                    # time courses are supposed to be independent with tICA, so are in S
-            #     S_pca_all = (inversion_results[1]['tcs'].T).T                                                                                                                                   # time courses are supposed to be independent with tICA, so are in S  
-            #     two_spatial_signals_plot(A_pca.T, spatial_data['mask'], spatial_data['dem'], S_pca_dc.T, S_pca_all.T, spatial_data['t_baselines_dc'], spatial_data['t_baselines_all'],          # 
-            #                              "02_PCA_sources", spatial_data['ifg_dates_dc'], fig_kwargs)                    
-    
-    
-    # if spatial:
-    #     if sica_tica == 'sica':
-    #         inversion_results = bss_components_inversion(S_ica, [spatial_data['ifgs_dc_mc'], spatial_data['ifgs_all_mc']])                                                 # invert to fit the incremetal ifgs, doens't matter if it was create_all_ifgs or not as only want to fit the diasy chain  
-    #         source_residuals = inversion_results[0]['residual']        
-    #         A_ica_dc = inversion_results[0]['tcs'].T
-    #         A_ica_all = inversion_results[1]['tcs'].T
-    #     elif sica_tica == 'tica':
-    #         import pdb; pdb.set_trace()
-    #         inversion_results = bss_components_inversion(S_ica, [spatial_data['ifgs_dc_mc'].T])#, spatial_data['ifgs_all_mc'].T])                                                 # invert to fit the incremetal ifgs, doens't matter if it was create_all_ifgs or not as only want to fit the diasy chain  
-    #         #inversion_results = bss_components_inversion(S_ica, [spatial_data['ifgs_dc_mc'].T])                                                 # invert to fit the incremetal ifgs.  
-    #         source_residuals = inversion_results[0]['residual']        
-    #         A_ica = inversion_results[0]['tcs'].T
-
-            
-
-    # # 6: Possibly make figure of the centrotypes (chosen sources) and time courses (ie these are the sources we have recovered)
-    # if fig_kwargs['figures'] != "none":
-    #     if spatial:
-    #         if sica_tica == 'sica':
-    #                 two_spatial_signals_plot(S_ica, spatial_data['mask'], spatial_data['dem'], A_ica_dc, A_ica_all, spatial_data['t_baselines_dc'], spatial_data['t_baselines_all'],
-    #                                          "04_ICA_sources", spatial_data['ifg_dates_dc'], fig_kwargs)
-    #         elif sica_tica == 'tica':
-    #             two_spatial_signals_plot(A_ica.T, spatial_data['mask'], spatial_data['dem'], S_ica.T, None , spatial_data['t_baselines_dc'], None,                                      # no data for all ifgs, as we didn't create them (where all is ifgs between all acquisitions.  )
-    #                                          "04_ICA_sources", spatial_data['ifg_dates_dc'], fig_kwargs)
-    #     else:
-    #         plot_temporal_signals(S_ica, '04_ICASAR_sources', **fig_kwargs)
+ 
      
     # 7: Possibly geocode the recovered sources and make a Google Earth file.     
     if spatial:
