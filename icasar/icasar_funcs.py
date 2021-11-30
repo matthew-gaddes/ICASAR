@@ -414,7 +414,7 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
                                 x_start, x_stop, y_start, y_stop, No checking that inputted values make sense.  
                                 Note, generally better to have cropped (cliped in LiCSBAS language) to the correct area in LiCSBAS_for_LiCSAlert
         return_r3 | boolean | if True, the rank 3 data is also returns (n_ifgs x height x width).  Not used by ICASAR, so default is False
-        ref_area | boolean | If True, the reference area (in pixels, x then y) used by LiCSBAS is extracted and returned to the user.  
+        ref_area | boolean | If True, the reference area (in pixels, x then y) used by LiCSBAS is returned to the user.  
                             Regardless of how this is set, the reference area is always extractd to reference the time series.  
 
     Outputs:
@@ -637,6 +637,7 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
     try:                                                                                                                                                             # reference the time series
         ifg_offsets = np.nanmean(cumulative[:, ref_xy['y_start']: ref_xy['y_stop'], ref_xy['x_start']: ref_xy['x_stop']], axis = (1,2))                              # get the offset between the reference pixel/area and 0 for each time
         cumulative = cumulative - np.repeat(np.repeat(ifg_offsets[:,np.newaxis, np.newaxis], cumulative.shape[1],  axis = 1), cumulative.shape[2], axis = 2)         # do the correction (first make ifg_offsets teh same size as cumulative).      
+        print(f"Succesfully referenced the LiCSBAS time series using the pixel/area selected by LiCSBAS.  ")
     except:
         print(f"Failed to reference the LiCSBAS time series - use with caution!  ")
     
