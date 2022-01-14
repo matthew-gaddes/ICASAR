@@ -24,8 +24,12 @@ def two_spatial_signals_plot(images, mask, dem, tcs_dc, tcs_all, t_baselines_dc,
         fig_kwargs | dict | see other functions.  
     Returns:
         2 figures
+        dem_to_sources_comparisons | dict | results of comparison between spatial sources and DEM.  xyzs: x and y and colours for each point from kernel density estimate, line_xys | list | xy points for line of best fit. corr_coefs | pearson correlation coefficeint for points.  
+        tcs_to_tempbaselines_comparisons | dict | as above, but correlations between temporal baselines and time courses (ie if long temrpoal baseline, is component used strongly.  )
+       
     History:
         2021_11_23 | MEG | Written
+        2022_01_14 | MEG | Add return of comparison dicts.  
         
     """
     
@@ -41,7 +45,9 @@ def two_spatial_signals_plot(images, mask, dem, tcs_dc, tcs_all, t_baselines_dc,
         temporal_data = {'tcs'                : tcs_dc,
                          'temporal_baselines' : t_baselines_dc}
         
-    dem_and_temporal_source_figure(images, mask, fig_kwargs, dem, temporal_data, fig_title = f"{title}_correlations")                                        # also compare the sources to the DEM, and the correlation between their time courses and the temporal baseline of each interferogram.  
+    dem_to_sources_comparisons, tcs_to_tempbaselines_comparisons = dem_and_temporal_source_figure(images, mask, fig_kwargs, dem, temporal_data, fig_title = f"{title}_correlations")        # also compare the sources to the DEM, and the correlation between their time courses and the temporal baseline of each interferogram.                                                                                                              # 
+                                                                                                                                                                                            # also note that it now returns information abou the sources and correlatiosn (comparison to the DEM, and how they're used in time.  )
+    return dem_to_sources_comparisons, tcs_to_tempbaselines_comparisons
 
 
   
@@ -207,7 +213,6 @@ def plot_spatial_signals(spatial_map, pixel_mask, tcs, shape, title, ifg_dates_d
     #     #fig1.tight_layout(rect=[0.1, 0, 1., 1])
     cax = fig1.add_axes([0.03, 0.1, 0.01, 0.3])
     fig1.colorbar(im, cax=cax, orientation='vertical')
-  
     if figures == 'window':                                                                 # possibly save the output
         pass
     elif figures == "png":
@@ -234,9 +239,12 @@ def dem_and_temporal_source_figure(sources, sources_mask, fig_kwargs, dem = None
         
     Returns:
         Figure
+        dem_to_sources_comparisons | dict | results of comparison between spatial sources and DEM.  xyzs: x and y and colours for each point from kernel density estimate, line_xys | list | xy points for line of best fit. corr_coefs | pearson correlation coefficeint for points.  
+        tcs_to_tempbaselines_comparisons | dict | as above, but correlations between temporal baselines and time courses (ie if long temrpoal baseline, is component used strongly.  )
         
     History:
         2021_09_12 | MEG | Written.  
+        2022_01_14 | MEG | Add return of comparison dicts.  
     """
     import numpy as np
     import numpy.ma as ma
@@ -263,8 +271,8 @@ def dem_and_temporal_source_figure(sources, sources_mask, fig_kwargs, dem = None
         dem_new_mask, sources_new_mask, mask_both = update_mask_sources_ifgs(sources_mask, sources,                             # this takes mask and data as row vectors for one set of masked pixels (the sources from pca) 
                                                                              ma.getmask(dem_ma), ma.compressed(dem_ma)[np.newaxis,:])            # and the mask and data as row vectors from the other set of masked pixels (the DEM, hence why it's being turned into a row vector)
         
-        [sources_new_mask, dem_new_mask] = reduce_n_pixs([sources_new_mask, dem_new_mask], max_pixels)
-        dem_to_sources_comparisons = signals_to_master_signal_comparison(sources_new_mask, dem_new_mask, density = True)                                                  # And then we can do kernel density plots for each IC and the DEM
+        [sources_new_mask, dem_new_mask] = reduce_n_pixs([sources_new_mask, dem_new_mask], max_pixels)                                                          # possibly reduce the number of pixels to speed things up (kernel density estimate is slow)
+        dem_to_sources_comparisons = signals_to_master_signal_comparison(sources_new_mask, dem_new_mask, density = True)                                        # And then we can do kernel density plots for each IC and the DEM
         
     else:
         dem_to_sources_comparisons = None
@@ -275,9 +283,10 @@ def dem_and_temporal_source_figure(sources, sources_mask, fig_kwargs, dem = None
                                                                                np.asarray(temporal_data['temporal_baselines'])[np.newaxis,:], density = True)               # And then we can do kernel density plots for each IC and the DEM
     else:
         tcs_to_tempbaselines_comparisons = None
-                                                                               
+                                                 
     plot_source_tc_correlations(sources, sources_mask, dem_ma, dem_to_sources_comparisons, tcs_to_tempbaselines_comparisons, fig_title = fig_title, **fig_kwargs)       # do the atual plotting
     print("Done.  ")
+    return dem_to_sources_comparisons, tcs_to_tempbaselines_comparisons
 
 #%%
 
@@ -537,6 +546,7 @@ def signals_to_master_signal_comparison(signals, master_signal, density = False)
             line_xys.append(np.vstack((x, line_yvals)))                                         # x vals are first row, y vals are 2nd row
             
             # 3: And the correlation coefficient
+            # import pdb; pdb.set_trace()
             cor_coefs.append(np.corrcoef(x, y)[1,0])                                            # which is a 2x2 matrix, but we just want the off diagonal (as thats the correlation coefficient between the signals)
             
             print(f"{signal_n} ", end = '')
