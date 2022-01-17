@@ -216,10 +216,16 @@ def plot_spatial_signals(spatial_map, pixel_mask, tcs, shape, title, ifg_dates_d
     if figures == 'window':                                                                 # possibly save the output
         pass
     elif figures == "png":
-        fig1.savefig(f"{png_path}/{title}.png")
-        plt.close()
+        try:
+            fig1.savefig(f"{png_path}/{title}.png")
+            plt.close()
+        except:
+            print(f"Failed to save the figure.  Trying to continue.  ")
     elif figures == 'png+window':
-        fig1.savefig(f"{png_path}/{title}.png")
+        try:
+            fig1.savefig(f"{png_path}/{title}.png")
+        except:
+            print(f"Failed to save the figure.  Trying to continue.  ")
     else:
         pass
 

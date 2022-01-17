@@ -105,9 +105,9 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
     plt.switch_backend('Qt5Agg')
     import sys
     import pdb
-    print(f"\n\n\nDEBUG IMPORT\n\n\n")
-    sys.path.append("/home/matthew/university_work/python_stuff/python_scripts")
-    from small_plot_functions import matrix_show
+    # print(f"\n\n\nDEBUG IMPORT\n\n\n")
+    # sys.path.append("/home/matthew/university_work/python_stuff/python_scripts")
+    # from small_plot_functions import matrix_show
 
 
 
