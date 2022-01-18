@@ -62,7 +62,7 @@ def plot_spatial_signals(spatial_map, pixel_mask, tcs, shape, title, ifg_dates_d
         tcs | cxt matrix of c time courses (t long)   
         shape | tuple | the shape of the grid that the spatial maps are reshaped to
         title | string | figure tite and png filename (nb .png will be added, don't include here)
-        Temporal_baselines | x axis values for time courses.  Useful if some data are missing (ie the odd 24 day ifgs in a time series of mainly 12 day)
+        temporal_baselines | x axis values for time courses.  Useful if some data are missing (ie the odd 24 day ifgs in a time series of mainly 12 day)
         figures | string,  "window" / "png" / "png+window" | controls if figures are produced (either as a window, saved as a png, or both)
         png_path | string | if a png is to be saved, a path to a folder can be supplied, or left as default to write to current directory.  
         
@@ -84,6 +84,7 @@ def plot_spatial_signals(spatial_map, pixel_mask, tcs, shape, title, ifg_dates_d
     import matplotlib.pyplot as plt
     import matplotlib
     import matplotlib.gridspec as gridspec
+    import pdb
     
     from icasar.aux2 import remappedColorMap, truncate_colormap
     
@@ -213,6 +214,8 @@ def plot_spatial_signals(spatial_map, pixel_mask, tcs, shape, title, ifg_dates_d
     #     #fig1.tight_layout(rect=[0.1, 0, 1., 1])
     cax = fig1.add_axes([0.03, 0.1, 0.01, 0.3])
     fig1.colorbar(im, cax=cax, orientation='vertical')
+    #pdb.set_trace()
+    
     if figures == 'window':                                                                 # possibly save the output
         pass
     elif figures == "png":
@@ -228,6 +231,8 @@ def plot_spatial_signals(spatial_map, pixel_mask, tcs, shape, title, ifg_dates_d
             print(f"Failed to save the figure.  Trying to continue.  ")
     else:
         pass
+    
+    
 
 #%%
 
