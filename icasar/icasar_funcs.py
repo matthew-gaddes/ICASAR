@@ -504,35 +504,32 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
                   'xy' : xy_tsne       }
     print('Saving the key results as a .pkl file... ', end = '')                                            # note that we don't save S_all_info as it's a huge file.  
     if spatial:
-        if sica_tica == 'sica':
-            with open(out_folder / 'ICASAR_results.pkl', 'wb') as f:
+        with open(out_folder / 'ICASAR_results.pkl', 'wb') as f:
+            if sica_tica == 'sica':
                 pickle.dump(S_ica, f)
-                pickle.dump(mask, f)
+            elif sica_tica == 'tica':
+                pickle.dump(A_ica, f)                                                       # spatial images are in A
+            pickle.dump(mask, f)
+            if sica_tica == 'sica':
                 pickle.dump(A_ica_dc, f)
-                pickle.dump(source_residuals, f)
-                pickle.dump(Iq_sorted, f)
-                pickle.dump(n_clusters, f)
-                pickle.dump(xy_tsne, f)
-                pickle.dump(labels_hdbscan, f)
+            elif sica_tica == 'tica':
+                pickle.dump(S_ica_dc.T, f)                                                  # time courses are sourcesa and in S
+
+            pickle.dump(source_residuals, f)
+            pickle.dump(Iq_sorted, f)
+            pickle.dump(n_clusters, f)
+            pickle.dump(xy_tsne, f)
+            pickle.dump(labels_hdbscan, f)
+            if label_sources:
                 pickle.dump(label_sources_output, f)
-            f.close()
+        f.close()
+
+        if sica_tica == 'sica':
             if label_sources:
                 return S_ica, A_ica_dc, source_residuals, Iq_sorted, n_clusters, S_all_info, X_mean, label_sources_output
             else:
                 return S_ica, A_ica_dc, source_residuals, Iq_sorted, n_clusters, S_all_info, X_mean
-            
         elif sica_tica == 'tica':
-            with open(out_folder / 'ICASAR_results.pkl', 'wb') as f:
-                pickle.dump(A_ica, f)                                                       # spatial images are in A
-                pickle.dump(mask, f)
-                pickle.dump(S_ica_dc.T, f)                                                  # time courses are sourcesa and in S
-                pickle.dump(source_residuals, f)
-                pickle.dump(Iq_sorted, f)
-                pickle.dump(n_clusters, f)
-                pickle.dump(xy_tsne, f)
-                pickle.dump(labels_hdbscan, f)
-                pickle.dump(label_sources_output, f)
-            f.close()
             if label_sources:
                 return A_ica, S_ica_dc.T, source_residuals, Iq_sorted, n_clusters, S_all_info, X_mean, label_sources_output
             else:
@@ -560,8 +557,8 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
 
 
 def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_cols=5, crop_pixels = None, return_r3 = False, 
-                      ref_area = True):
-    """ A function to prepare the outputs of LiCSBAS for use with LiCSALERT.
+                      ref_area = True, mask_type = 'dem'):
+    """ A function to prepare the outputs of LiCSBAS for use with LiCSALERT. Note that this includes the step of referencing the time series to the reference area selected by LiCSBAS.  
     LiCSBAS uses nans for masked areas - here these are converted to masked arrays.   Can also create three figures: 1) The Full LiCSBAS ifg, and the area
     that it has been cropped to 2) The cumulative displacement 3) The incremental displacement.  
 
@@ -574,7 +571,9 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
                                 Note, generally better to have cropped (cliped in LiCSBAS language) to the correct area in LiCSBAS_for_LiCSAlert
         return_r3 | boolean | if True, the rank 3 data is also returns (n_ifgs x height x width).  Not used by ICASAR, so default is False
         ref_area | boolean | If True, the reference area (in pixels, x then y) used by LiCSBAS is returned to the user.  
-                            Regardless of how this is set, the reference area is always extractd to reference the time series.  
+                            ##### Regardless of how this is set, the reference area is always extractd to reference the time series.  #######
+        mask_type | string | 'dem' or 'licsbas'  If dem, only the pixels masked in the DEM are masked (i.e. pretty much only water.  ).  Note that any pixels that are incoherent in the time series are also masked (ie if incoherent in one ifg, will be masked for all ifgs.  )
+                                                If licsbas, the pixels that licsbas thinks should be masked are masked (ie water + incoherent).  Note that the dem masked is added to the licsbas mask to ensure things are consistent, but there should be no change here (every pixel masked in the DEM is also masked in the licsbas mask)
 
     Outputs:
         displacment_r3 | dict | Keys: cumulative, incremental.  Stored as masked arrays.  Mask should be consistent through time/interferograms
@@ -599,6 +598,7 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
     2021_09_28 | MEG | Fix cropping option.  
     2021_11_15 | MEG | Use LiCSBAS reference pixel/area information to reference time series.  
     2021_11_17 | MEG | Add funtcionality to work with LiCSBAS bytes/string issue in reference area.  
+    2022_02_02 | MEG | Iimprove masking, and add option to use the LiCSbas mask (i.e. pixels licsbas deems are incohere/poorly unwrapped etc.  )
     """
 
     import h5py as h5
@@ -609,6 +609,7 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
     import re
     import pathlib
     #from pathlib import Path
+    import pdb
     
     from icasar.aux2 import add_square_plot
     from icasar.aux import col_to_ma
@@ -780,10 +781,20 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
         cumh5 = h5.File(LiCSBAS_out_folder / LiCSBAS_folders['TS_'] / 'cum_filt.h5' ,'r')                       # either open the filtered file from LiCSBAS
     else:
         cumh5 = h5.File(LiCSBAS_out_folder / LiCSBAS_folders['TS_'] / 'cum.h5' ,'r')                            # or the non filtered file from LiCSBAS
-    tbaseline_info["acq_dates"] = cumh5['imdates'][()].astype(str).tolist()                                        # get the acquisition dates
-    cumulative = cumh5['cum'][()]                                                                                # get cumulative displacements as a rank3 numpy array
-    cumulative *= 0.001                                                                                             # LiCSBAS default is mm, convert to m
-        
+    tbaseline_info["acq_dates"] = cumh5['imdates'][()].astype(str).tolist()                                     # get the acquisition dates
+    cumulative = cumh5['cum'][()]                                                                               # get cumulative displacements as a rank3 numpy array
+    cumulative *= 0.001                                                                                         # LiCSBAS default is mm, convert to m
+
+
+    # 2: Open the parameter file to get the number of pixels in width and height (though this should agree with above)   
+    try:
+        width = int(get_param_par(LiCSBAS_out_folder / LiCSBAS_folders['ifgs'] / 'slc.mli.par', 'range_samples'))
+        length = int(get_param_par(LiCSBAS_out_folder / LiCSBAS_folders['ifgs'] / 'slc.mli.par', 'azimuth_lines'))
+    except:
+        print(f"Failed to open the 'slc.mli.par' file, so taking the width and length of the image from the h5 file and trying to continue.  ")
+        (_, length, width) = cumulative.shape
+
+    # 3: Reference the time series
     ref_str = cumh5['refarea'][()] 
     if not isinstance(ref_str, str):                                                                           # ref_str is sometimes a string, sometimes not (dependent on LiCSBAS version perhaps? )
         ref_str = ref_str.decode()                                                                             # assume that if not a string, a bytes object that can be decoded.        
@@ -801,13 +812,33 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
         print(f"Failed to reference the LiCSBAS time series - use with caution!  ")
     
     
+    #3: Open the mask and the DEM
+    mask_licsbas = read_img(LiCSBAS_out_folder / LiCSBAS_folders['TS_'] / 'results' /  'mask', length, width)                   # this is 1 for coherenct pixels, 0 for non-coherent/water, and masked for water
+    mask_licsbas = np.logical_and(mask_licsbas, np.invert(np.isnan(mask_licsbas)))                                          # add any nans to the mask (nans become 0)
+    mask_licsbas = np.invert(mask_licsbas)                                                                              # invert so that land is 0 (not masked), and water and incoherent are 1 (masked)
     
-    # 2: Mask the data  
-    mask_coh_water = np.isnan(cumulative)                                                                       # get where masked
-    displacement_r3["cumulative"] = ma.array(cumulative, mask=mask_coh_water)                                   # rank 3 masked array of the cumulative displacement
+    dem = read_img(LiCSBAS_out_folder / LiCSBAS_folders['ifgs'] / 'hgt', length, width)
+    mask_dem = np.isnan(dem)
+    
+    mask_cum = np.isnan(cumulative)                                                                       # get where masked
+    mask_cum = (np.sum(mask_cum, axis = 0) > 0)                                                             # sum all the pixels in time (dim 0), and if ever bigger than 0 then must be masked at some point so mask.  
+    
+    if mask_type == 'dem':
+        mask = np.logical_or(mask_dem, mask_cum)                                                        # if dem, mask water (from DEM), and anything that's nan in cumulative (mask_cum)
+    elif mask_type == 'mask_licsbas':
+        mask = np.logical_or(mask_licsbas, np.logical_or(mask_dem, mask_cum))
+        
+    mask_r3 = np.repeat(mask[np.newaxis,], cumulative.shape[0], 0)
+    dem_ma = ma.array(dem, mask = mask)
+    displacement_r2['dem'] = dem_ma                                                                      # and added to the displacement dict in the same was as the lons and lats
+    displacement_r3['dem'] = dem_ma                                                                      # 
+    
+    
+    # 3: Mask the data  
+    displacement_r3["cumulative"] = ma.array(cumulative, mask=mask_r3)                                   # rank 3 masked array of the cumulative displacement
     displacement_r3["incremental"] = np.diff(displacement_r3['cumulative'], axis = 0)                           # displacement between each acquisition - ie incremental
     if displacement_r3["incremental"].mask.shape == ():                                                         # in the case where no pixels are masked, the diff operation on the mask collapses it to nothing.  
-        displacement_r3["incremental"].mask = mask_coh_water[1:]                                                # in which case, we can recreate the mask from the rank3 mask, but dropping one from the first dimension as incremental is always one smaller than cumulative.  
+        displacement_r3["incremental"].mask = mask_r3[1:]                                                # in which case, we can recreate the mask from the rank3 mask, but dropping one from the first dimension as incremental is always one smaller than cumulative.  
     n_im, length, width = displacement_r3["cumulative"].shape                                   
 
     # if figures:                                                 
@@ -817,12 +848,12 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
     displacement_r2['cumulative'], displacement_r2['mask'] = rank3_ma_to_rank2(displacement_r3['cumulative'])      # convert from rank 3 to rank 2 and a mask
     displacement_r2['incremental'], _ = rank3_ma_to_rank2(displacement_r3['incremental'])                          # also convert incremental, no need to also get mask as should be same as above
 
-    # 3: work with the acquisiton dates to produces names of daisy chain ifgs, and baselines
+    # 4: work with the acquisiton dates to produces names of daisy chain ifgs, and baselines
     tbaseline_info["ifg_dates"] = daisy_chain_from_acquisitions(tbaseline_info["acq_dates"])
     tbaseline_info["baselines"] = baseline_from_names(tbaseline_info["ifg_dates"])
     tbaseline_info["baselines_cumulative"] = np.cumsum(tbaseline_info["baselines"])                                                            # cumulative baslines, e.g. 12 24 36 48 etc
     
-    # 4: get the lons and lats of each pixel in the ifgs
+    # 5: get the lons and lats of each pixel in the ifgs
     geocode_info = create_lon_lat_meshgrids(cumh5['corner_lon'][()], cumh5['corner_lat'][()], 
                                             cumh5['post_lon'][()], cumh5['post_lat'][()], displacement_r3['incremental'][0,:,:])             # create meshgrids of the lons and lats for each pixel
     displacement_r2['lons'] = geocode_info['lons_mg']                                                                                        # add to the displacement dict
@@ -830,22 +861,6 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
     displacement_r3['lons'] = geocode_info['lons_mg']                                                                                        # add to the displacement dict (rank 3 one)
     displacement_r3['lats'] = geocode_info['lats_mg']
 
-    # 4: Open the parameter file to get the number of pixels in width and height (though this should agree with above)   
-    try:
-        width = int(get_param_par(LiCSBAS_out_folder / LiCSBAS_folders['ifgs'] / 'slc.mli.par', 'range_samples'))
-        length = int(get_param_par(LiCSBAS_out_folder / LiCSBAS_folders['ifgs'] / 'slc.mli.par', 'azimuth_lines'))
-    except:
-        print(f"Failed to open the 'slc.mli.par' file, so taking the width and length of the image from the h5 file and trying to continue.  ")
-        (_, length, width) = cumulative.shape
-       
-    # 5: get the DEM
-    try:
-        dem = read_img(LiCSBAS_out_folder / LiCSBAS_folders['ifgs'] / 'hgt', length, width)
-        displacement_r2['dem'] = dem                                                                      # and added to the displacement dict in the same was as the lons and lats
-        displacement_r3['dem'] = dem                                                                      # 
-    except:
-        print(f"Failed to open the DEM from the hgt file for this volcano, but trying to continue anyway.")
-    
     # 6: Get the E N U files (these are the components of the ground to satellite look vector in east north up directions.  )   
     try:
         for component in ['E', 'N', 'U']:
