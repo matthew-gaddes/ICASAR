@@ -495,8 +495,8 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
                 print(f"'label_sources' is only supported with spatial data.  Setting this to False and trying to conitnue.  ")           # labelling of sources is intended for use with time series of intererograms and not temporal data.  
                 label_sources == False
                 
-                
-        
+    if plt.get_backend() == 'agg':
+        plt.switch_backend('Qt5Agg')
 
     # 9: Save the results: 
     S_all_info = {'sources' : sources_all_r2,                                                                # package into a dict to return
