@@ -311,7 +311,18 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         
     # 1: do sPCA once (and possibly create a figure of the PCA sources)
     print('Performing PCA to whiten the data....', end = "")
-    PC_vecs, PC_vals, PC_whiten_mat, PC_dewhiten_mat, x_mc, x_decorrelate, x_white = PCA_meg2(X_mc, verbose = False)                    # do PCA on the mean centered mixtures
+    success = False
+    count = 0
+    while (success == False) and (count < 10):
+        try:
+            PC_vecs, PC_vals, PC_whiten_mat, PC_dewhiten_mat, x_mc, x_decorrelate, x_white = PCA_meg2(X_mc, verbose = False)                    # do PCA on the mean centered mixtures
+            success = True
+        except:
+            success = False
+            count += 1 
+    if not success:
+        raise Exception(f"PCA failed after {count} attempts.  This is most common with tICA when the number of observations are lower than the "
+                        f"number of variables and the compact trick is being used.  ")
     A_pca = PC_vecs                                                                                                                     # time courses 
     S_pca = x_decorrelate                                                                                                               # sources
     if spatial:
@@ -523,6 +534,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
             if label_sources:
                 pickle.dump(label_sources_output, f)
         f.close()
+        print("Done!")
 
         if sica_tica == 'sica':
             if label_sources:
@@ -534,7 +546,7 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
                 return A_ica, S_ica_dc.T, source_residuals, Iq_sorted, n_clusters, S_all_info, X_mean, label_sources_output
             else:
                 return A_ica, S_ica_dc.T, source_residuals, Iq_sorted, n_clusters, S_all_info, X_mean
-        print("Done!")
+        
     else:                                                                       # if temporal data, no mask to save
         with open(out_folder / 'ICASAR_results.pkl', 'wb') as f:
             pickle.dump(S_ica, f)
