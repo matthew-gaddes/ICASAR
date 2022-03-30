@@ -243,13 +243,18 @@ def update_mask_sources_ifgs(mask_sources, sources, mask_ifgs, ifgs):
             ifgs_new_mask | r2 array | as per ifgs, but with a new mask.  
         History:
             2020/06/26 | MEG | Written
+            2022_03_30 | MEG |  fix a bug in the number of pixels for the output array (ie. number of columns of ifgs_new_mask)
         """
-        n_pixs_new = len(np.argwhere(mask_new == False))                                        
-        ifgs_new_mask = np.zeros((ifgs.shape[0], n_pixs_new))                        # initiate an array to store the modified sources as row vectors    
-        for ifg_n, ifg in enumerate(ifgs):                                 # Loop through each source
-            ifg_r2 = col_to_ma(ifg, mask_old)                             # turn it from a row vector into a rank 2 masked array        
-            ifg_r2_new_mask = ma.array(ifg_r2, mask = mask_new)              # apply the new mask   
-            ifgs_new_mask[ifg_n, :] = ma.compressed(ifg_r2_new_mask)       # convert to row vector and places in rank 2 array of modified sources
+
+        
+        for ifg_n, ifg in enumerate(ifgs):                                            # Loop through each source
+            ifg_r2 = col_to_ma(ifg, mask_old)                                         # turn it from a row vector into a rank 2 masked array        
+            ifg_r2_new_mask = ma.array(ifg_r2, mask = mask_new)                       # apply the new mask   
+            ifg_r1_new_mask = ma.compressed(ifg_r2_new_mask)                          # convert to row vector 
+            if ifg_n == 0:                                                            # if it's the first ifg..  
+                n_pixs_new = ifg_r1_new_mask.shape[0]                                 # get the new number of pixels 
+                ifgs_new_mask = np.zeros((ifgs.shape[0], n_pixs_new))                 # initiate an array of the correct size
+            ifgs_new_mask[ifg_n, :] = ifg_r1_new_mask                                 # put the row vector into the array
         return ifgs_new_mask
     
     

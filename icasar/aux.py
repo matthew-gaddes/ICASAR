@@ -57,7 +57,7 @@ def plot_spatial_signals(spatial_map, pixel_mask, tcs, shape, title, ifg_dates_d
                          temporal_baselines, figures = "window",  png_path = './'):
     """
     Input:
-        spatial map | pxc matrix of c component maps (p pixels)
+        spatial map | pxc matrix of c component maps (p pixels) (i.e. images are column vectors)
         pixel_mask | mask to turn spaital maps back to regular grided masked arrays
         tcs | cxt matrix of c time courses (t long)   
         shape | tuple | the shape of the grid that the spatial maps are reshaped to

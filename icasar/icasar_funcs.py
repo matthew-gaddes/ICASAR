@@ -337,7 +337,6 @@ def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window"
         S_pca = S_pca[:n_comp,:]                                                                                                        # truncate to desired number of components
         A_pca =  A_pca[:,:n_comp]
         
-    
     if fig_kwargs['figures'] != "none":
         plot_pca_variance_line(PC_vals, title = '01_PCA_variance_line', **fig_kwargs)
         if spatial:
@@ -578,7 +577,7 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
         h5_file | string | path to h5 file.  e.g. cum_filt.h5
         figures | boolean | if True, make figures
         n_cols  | int | number of columns for figures.  May want to lower if plotting a long time series
-        crop_pixels | tuple | coords to crop images to.  x then y, 00 is top left.  e.g. (10, 500, 600, 900).  
+        crop_pixels | tuple | coords to crop images to.  x start x stop y start y stop , 00 is top left.  e.g. (10, 500, 600, 900).  
                                 x_start, x_stop, y_start, y_stop, No checking that inputted values make sense.  
                                 Note, generally better to have cropped (cliped in LiCSBAS language) to the correct area in LiCSBAS_for_LiCSAlert
         return_r3 | boolean | if True, the rank 3 data is also returns (n_ifgs x height x width).  Not used by ICASAR, so default is False
@@ -837,7 +836,7 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
     
     if mask_type == 'dem':
         mask = np.logical_or(mask_dem, mask_cum)                                                        # if dem, mask water (from DEM), and anything that's nan in cumulative (mask_cum)
-    elif mask_type == 'mask_licsbas':
+    elif mask_type == 'licsbas':
         mask = np.logical_or(mask_licsbas, np.logical_or(mask_dem, mask_cum))
         
     mask_r3 = np.repeat(mask[np.newaxis,], cumulative.shape[0], 0)
