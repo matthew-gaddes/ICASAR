@@ -1053,7 +1053,7 @@ def bootstrapped_sources_to_centrotypes(sources_r2, hdbscan_param, tsne_param):
     # 3:  2d manifold with all the recovered sources
     print('Starting to calculate the 2D manifold representation....', end = "")
     manifold_tsne = TSNE(n_components = 2, metric = 'precomputed', perplexity = perplexity, early_exaggeration = early_exaggeration,
-                         init = 'random', learning_rate = 200.0, square_distances='legacy')                                                                               # default will change to pca in 1.2.  May be worth experimenting with.  
+                         init = 'random', learning_rate = 200.0, square_distances=True)                                                                               # default will change to pca in 1.2.  May be worth experimenting with.  
     xy_tsne = manifold_tsne.fit(D).embedding_
     print('Done!' )
     
