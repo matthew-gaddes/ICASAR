@@ -1,0 +1,14 @@
+Noise index    : Threshold  (rate to be masked)
+- coh_avg      : 0.05       (15.5%)
+- n_unw        :  243       ( 4.5%)
+- vstd         :  100 mm/yr ( 0.0%)
+- maxTlen      :    1 yr    ( 3.8%)
+- n_gap        :   10       (15.7%)
+- stc          :    5 mm    (10.5%)
+- n_ifg_noloop :   50       ( 8.7%)
+- n_loop_err   :    5       (24.2%)
+- resid_rms    :    2 mm    (19.8%)
+
+Masked pixels  : 5265/20863 (25.2%)
+Kept pixels    : 15598/20863 (74.8%)
+

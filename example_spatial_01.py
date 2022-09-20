@@ -125,8 +125,9 @@ spatial_data = {'ifgs_dc' : phUnw,
 S_best, time_courses, x_train_residual_ts, Iq, n_clusters, S_all_info, phUnw_mean  = ICASAR(spatial_data = spatial_data, **ICASAR_settings) 
       
 
+
 #%% We can reconstruct the data using the sources and timecourses, but don't forget that ICA returns mean centered sources 
-phUnw_mean = phUnw_mean[:, np.newaxis]
+phUnw_mean = phUnw_mean[:, np.newaxis]                                                              # turn from rank 1 to rank 2
 
 X_dc_reconstructed = (time_courses @ S_best) + phUnw_mean                                           # here we add the mean back
 X_dc_reconstructed_source0 = (time_courses[:,0:1] @ S_best[0:1,:]) + phUnw_mean                     # and remake the entire time series using only IC0
