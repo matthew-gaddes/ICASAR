@@ -191,7 +191,7 @@ def plot_spatial_signals(spatial_map, pixel_mask, tcs, shape, title, ifg_dates_d
         ax_source = plt.Subplot(fig1, grid[i,0])                                                                                        # spatial pattern
         ax_ctc = plt.Subplot(fig1, grid[i,1:])                                                                                          # ctc = cumulative time course
         # 1: plot the images (sources)
-        im = ax_source.imshow(spatial_maps_ma[i], cmap = ifg_colours_cent, vmin = np.min(spatial_map), vmax = np.max(spatial_map))
+        im = ax_source.matshow(spatial_maps_ma[i], cmap = ifg_colours_cent, vmin = np.min(spatial_map), vmax = np.max(spatial_map))
         ax_source.set_xticks([])
         ax_source.set_yticks([])
 
@@ -349,7 +349,7 @@ def plot_source_tc_correlations(sources, mask, dem = None, dem_to_ic_comparisons
     if dem is not None:
         terrain_cmap = plt.get_cmap('terrain')
         terrain_cmap = truncate_colormap(terrain_cmap, 0.2, 1)    
-        dem_plot = axes[1,0].imshow(dem, cmap = terrain_cmap)
+        dem_plot = axes[1,0].matshow(dem, cmap = terrain_cmap)
         axin = axes[1,0].inset_axes([0, -0.06, 1, 0.05])
         cbar_1 = f.colorbar(dem_plot, cax=axin, orientation='horizontal')
         cbar_1.set_label('Height (m)', fontsize = 8)
@@ -373,7 +373,7 @@ def plot_source_tc_correlations(sources, mask, dem = None, dem_to_ic_comparisons
     # 3: Loop through each IC
     for ic_n in range(n_sources):
         # 2a: Plotting the IC
-        im = axes[0,ic_n+1].imshow(col_to_ma(sources[ic_n,:], mask), cmap = ifg_colours_cent, vmin = np.min(sources), vmax = np.max(sources))
+        im = axes[0,ic_n+1].matshow(col_to_ma(sources[ic_n,:], mask), cmap = ifg_colours_cent, vmin = np.min(sources), vmax = np.max(sources))
         axes[0,ic_n+1].set_xticks([])
         axes[0,ic_n+1].set_yticks([])
         axes[0,ic_n+1].set_title(f"Source {ic_n}")
@@ -472,7 +472,7 @@ def visualise_ICASAR_inversion(interferograms, sources, time_courses, mask, n_da
     def plot_ifg(ifg, ax, mask, vmin, vmax):
         """
         """
-        w = ax.imshow(col_to_ma(ifg, mask), interpolation ='none', aspect = 'equal', vmin = vmin, vmax = vmax)                                                   # 
+        w = ax.matshow(col_to_ma(ifg, mask), interpolation ='none', aspect = 'equal', vmin = vmin, vmax = vmax)                                                   # 
         axin = ax.inset_axes([0, -0.06, 1, 0.05])
         fig.colorbar(w, cax=axin, orientation='horizontal')
         ax.set_yticks([])
@@ -1096,7 +1096,7 @@ def r2_array_to_png(r2, filename, png_folder = './'):
     import matplotlib.pyplot as plt
     
     f, ax = plt.subplots(1,1)
-    ax.imshow(r2, cmap = plt.get_cmap('coolwarm'))
+    ax.matshow(r2, cmap = plt.get_cmap('coolwarm'))
     plt.gca().set_axis_off()
     plt.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, hspace = 0, wspace = 0)
     plt.margins(0,0)

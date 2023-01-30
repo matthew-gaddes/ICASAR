@@ -140,7 +140,7 @@ def plot_2d_interactive_fig(xy, colours, spatial_data = None, temporal_data = No
                     inset_axes.plot(temporal_data['xvals'], temporal_data['tcs_r2'][point_n,])                            # draw the inset axes time course graph
                     inset_axes.axhline(0)
                 if spatial_data is not None:
-                    inset_axes.imshow(spatial_data['images_r3'][point_n,])                                                      # or draw the inset axes image
+                    inset_axes.matshow(spatial_data['images_r3'][point_n,])                                                      # or draw the inset axes image
                 inset_axes.set_xticks([])                                                                                       # and remove ticks (and so labels too) from x
                 inset_axes.set_yticks([])                                                                                       # and from y
                 fig.canvas.draw_idle()                                                                                          # update the figure.  

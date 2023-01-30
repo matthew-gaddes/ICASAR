@@ -5,7 +5,9 @@ Created on Tue May 29 11:23:10 2018
 @author: eemeg
 """
 
+import pdb
 
+#%%
 
 def ICASAR(n_comp, spatial_data = None, temporal_data = None, figures = "window", 
            sica_tica = 'sica', ifgs_format = 'all', max_n_all_ifgs = 1000,                                                     # this row of arguments are only needed with spatial data.  
@@ -670,7 +672,7 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
         fig1.suptitle(title)
         for n_ifg in range(n_ifgs):
             ax=np.ravel(axes)[n_ifg]                                                                            # get axes on it own
-            matrixPlt = ax.imshow(ifgs_r3[n_ifg,],interpolation='none', aspect='equal')                         # plot the ifg
+            matrixPlt = ax.matshow(ifgs_r3[n_ifg,],interpolation='none', aspect='equal')                         # plot the ifg
             ax.set_xticks([])
             ax.set_yticks([])
             fig1.colorbar(matrixPlt,ax=ax)                                                                       
@@ -889,7 +891,7 @@ def LiCSBAS_to_ICASAR(LiCSBAS_out_folder, filtered = False, figures = False, n_c
             fig_crop, ax = plt.subplots()
             fig_crop.canvas.manager.set_window_title(title)
             ax.set_title(title)
-            ax.imshow(col_to_ma(displacement_r2['incremental'][ifg_n_plot,:], displacement_r2['mask']),
+            ax.matshow(col_to_ma(displacement_r2['incremental'][ifg_n_plot,:], displacement_r2['mask']),
                                 interpolation='none', aspect='auto')                                            # plot the uncropped ifg
         
         #import pdb; pdb.set_trace()
@@ -1005,7 +1007,7 @@ def update_mask_sources_ifgs(mask_sources, sources, mask_ifgs, ifgs):
 def bootstrapped_sources_to_centrotypes(sources_r2, hdbscan_param, tsne_param):
     """ Given the products of the bootstrapping, run the 2d manifold and clustering algorithms to create centrotypes.  
     Inputs:
-        ifgs_inc | rank 2 array | all the sources recovered after bootstrapping.  If 5 components and 100 bootstrapped runs, this will be 500 x n_pixels (or n_times)
+        sources_r2      | rank 2 array | all the sources recovered after bootstrapping.  If 5 components and 100 bootstrapped runs, this will be 500 x n_pixels (or n_times)
         hdbscan_param  | tuple | Used to control the clustering (min_cluster_size, min_samples)
         tsne_param     | tuple | Used to control the 2d manifold learning  (perplexity, early_exaggeration)
     Returns:
@@ -1029,10 +1031,12 @@ def bootstrapped_sources_to_centrotypes(sources_r2, hdbscan_param, tsne_param):
     min_cluster_size = hdbscan_param[0]                                              
     min_samples = hdbscan_param[1] 
 
+    
+
     # 1: Create the pairwise comparison matrix
     print('\nStarting to compute the pairwise distance matrices....', end = '')
-    D, S = pairwise_comparison(sources_r2)
-    print('Done!')
+    D, S = pairwise_comparison(sources_r2)                                              # each row is a source, is column is a pixel.  There ar n_comp * n_bootstrapping sources.  
+    print('Done!')                                                                      # D are distances, S are similiarities (so just 1 - each other).  n_sources * n_sources (so square).  
 
 
     #  2: Clustering with all the recovered sources   
@@ -1054,6 +1058,33 @@ def bootstrapped_sources_to_centrotypes(sources_r2, hdbscan_param, tsne_param):
                          init = 'random', learning_rate = 200.0, square_distances=True)                                                                               # default will change to pca in 1.2.  May be worth experimenting with.  
     xy_tsne = manifold_tsne.fit(D).embedding_
     print('Done!' )
+    
+# testing.      
+#     def test_tsne(n_comp, D, perplexity, early_exaggeration):
+#         """
+#         """
+#         from sklearn.manifold import TSNE                                            # t-distributed stochastic neighbour embedding
+#         import matplotlib.pyplot as plt
+# #        plt.switch_backend('Qt5Agg')
+#         import sys
+#         sys.path.append("/home/matthew/university_work/python_stuff/python_scripts")
+#         from small_plot_functions import matrix_show
+        
+        
+#         manifold_tsne = TSNE(n_components = n_comp, metric = 'precomputed', perplexity = perplexity, early_exaggeration = early_exaggeration,
+#                              init = 'random', learning_rate = 200.0, square_distances=True, method = 'exact')                                                                               # default will change to pca in 1.2.  May be worth experimenting with.  
+#         xy_tsne_2 = manifold_tsne.fit(D).embedding_
+#         D_tsne_2, _= pairwise_comparison(xy_tsne_2)                                              # each row is a source, is column is a pixel.  There ar n_comp * n_bootstrapping sources.  
+#         matrix_show([D_tsne_2], title = f'{n_comp} dims') 
+        
+
+#     matrix_show([D], title = 'D - high dim data')
+#     test_tsne(100, D, perplexity, early_exaggeration)
+#     test_tsne(3, D, perplexity, early_exaggeration)
+    
+    
+    
+    #%%
     
     # 4: Determine the number of clusters from HDBSCAN
     if np.min(labels_hdbscan) == (-1):                                      # if we have noise (which is labelled as -1 byt HDBSCAN), 
@@ -1264,7 +1295,7 @@ def pairwise_comparison(sources_r2):
     """
     import numpy as np
     
-    S = np.corrcoef(sources_r2)                                                  # Similarity matrix
+    S = np.corrcoef(sources_r2)                                                  # Similarity matrix, Return Pearson product-moment correlation coefficients
     S = np.abs(S)                                                                # covariance of 1 and -1 are equivalent for our case
     D = 1 - S                                                                   # convert to dissimilarity    
     return D, S
