@@ -1,5 +1,11 @@
+# January 2023 addition:
+For the majority of users working with time series of InSAR data, [LiCSAlert](https://github.com/matthew-gaddes/LiCSAlert) is now recomended over calling ICASAR directly.  LiCSAlert handles all aspects of calling ICASAR, and provides far more information to analyse a time series.  
+
+For users applying this algorithm to time series of data at pionts that can't be represented as images (e.g. recordings from 4 microphones in a room, results from seismometers etc.), ICASAR is still supported with examples included.  This is similar to the method described in Turner et al. (2002) [Stresses in the Lunar Interior: Insights From Slip Directions in the A01 Deep Moonquake Nest](https://agupubs.onlinelibrary.wiley.com/doi/full/10.1029/2022JE007364)
+
+
 # ICASAR
-An algorithm for robustly appling sICA to InSAR data in order to isolate deformation signals and atmospheric signals.  Its use is detailed in the [GitHub Wiki](https://github.com/matthew-gaddes/ICASAR/wiki).  
+An algorithm for robustly appling sICA to InSAR data in order to isolate deformation signals and atmospheric signals.  
 
 [Gaddes et al., 2019](https://agupubs.onlinelibrary.wiley.com/doi/abs/10.1029/2019JB017519) details its application to Sierra Negra (Galapagos Archipelago, Ecuador), where it was able to isolate the caldera floor uplift signal (source 1), and a topograhically correlated atmospheric phase screen (source 2):
 
